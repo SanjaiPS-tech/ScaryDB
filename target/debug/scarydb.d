@@ -1,0 +1,1 @@
+C:\Git\ Projects\ScaryDB\target\debug\scarydb.exe: C:\Git\ Projects\ScaryDB\src\catalog.rs C:\Git\ Projects\ScaryDB\src\config.rs C:\Git\ Projects\ScaryDB\src\engine.rs C:\Git\ Projects\ScaryDB\src\main.rs C:\Git\ Projects\ScaryDB\src\parser.rs C:\Git\ Projects\ScaryDB\src\persistence.rs C:\Git\ Projects\ScaryDB\src\value.rs C:\Git\ Projects\ScaryDB\src\worker.rs

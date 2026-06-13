@@ -1,0 +1,20 @@
+{
+  "server": {
+    "workers": 1
+  },
+  "storage": {
+    "data_dir": "./data",
+    "checkpoint_interval_ops": 5
+  },
+  "memory": {
+    "max_memory_kb": 0
+  },
+  "network": {
+    "host": "127.0.0.1",
+    "port": 6379
+  },
+  "metadata": {
+    "version": "0.1.0",
+    "startup_time": "2026-06-13T20:08:36.615813700+00:00"
+  }
+}
