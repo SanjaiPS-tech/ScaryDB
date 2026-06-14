@@ -1,0 +1,42 @@
+{
+  "db_catalog": {
+    "next_bucket_id": 1,
+    "bucket_name_to_id": {
+      "users": 0
+    },
+    "bucket_id_to_name": {
+      "0": "users"
+    },
+    "bucket_key_catalogs": {
+      "0": {
+        "next_key_id": 3,
+        "key_name_to_id": {
+          "user2": 1,
+          "user1": 0,
+          "user3": 2
+        },
+        "key_id_to_name": {
+          "0": "user1",
+          "1": "user2",
+          "2": "user3"
+        }
+      }
+    }
+  },
+  "data": {
+    "0": {
+      "0": {
+        "type": "String",
+        "value": "Alice"
+      },
+      "1": {
+        "type": "Int",
+        "value": 42
+      },
+      "2": {
+        "type": "Bool",
+        "value": true
+      }
+    }
+  }
+}

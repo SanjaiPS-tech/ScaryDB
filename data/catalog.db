@@ -1,0 +1,9 @@
+{
+  "next_db_id": 3,
+  "db_name_to_id": {
+    "my_db": 2
+  },
+  "db_id_to_name": {
+    "2": "my_db"
+  }
+}

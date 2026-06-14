@@ -330,7 +330,7 @@ pub fn parse_command(input: &str) -> Result<Command, String> {
             consume_optional_semicolon(&tokens, &mut cursor);
             Ok(Command::Exists { bucket, keys })
         }
-        "BOINK" => {
+        "BOINK" | "PING" => {
             consume_optional_semicolon(&tokens, &mut cursor);
             Ok(Command::Boink)
         }
@@ -442,5 +442,12 @@ mod tests {
                 keys: vec!["u1".to_string(), "u2".to_string()]
             })
         );
+    }
+
+    #[test]
+    fn test_parse_boink_and_ping() {
+        assert_eq!(parse_command("BOINK;"), Ok(Command::Boink));
+        assert_eq!(parse_command("PING;"), Ok(Command::Boink));
+        assert_eq!(parse_command("ping"), Ok(Command::Boink));
     }
 }

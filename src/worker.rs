@@ -288,7 +288,7 @@ DRC (Data Retrieval Commands)
   COUNT <bucket>;
 
 SCC (System Control Commands)
-  BOINK
+  BOINK / PING
   INFO
   STATS
   VERSION
