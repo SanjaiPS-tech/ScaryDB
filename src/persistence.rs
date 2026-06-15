@@ -207,6 +207,7 @@ pub struct PersistenceManager {
     log_file_path: PathBuf,
     catalog_path: PathBuf,
     next_tx_id: u64,
+    log_file: Option<File>,
 }
 
 impl PersistenceManager {
@@ -217,6 +218,7 @@ impl PersistenceManager {
             catalog_path: dir.join("catalog.db"),
             data_dir: dir,
             next_tx_id: 1,
+            log_file: None,
         }
     }
 
@@ -238,11 +240,17 @@ impl PersistenceManager {
         entry.extend_from_slice(&tx_id.to_be_bytes());
         entry.extend(payload);
 
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.log_file_path)
-            .map_err(|e| format!("Failed to open log file: {}", e))?;
+        let file = if let Some(ref mut f) = self.log_file {
+            f
+        } else {
+            let f = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&self.log_file_path)
+                .map_err(|e| format!("Failed to open log file: {}", e))?;
+            self.log_file = Some(f);
+            self.log_file.as_mut().unwrap()
+        };
 
         file.write_all(&entry)
             .map_err(|e| format!("Failed to write to log file: {}", e))?;
@@ -337,6 +345,9 @@ impl PersistenceManager {
                     .map_err(|e| format!("Failed to write db file {}: {}", db_name, e))?;
             }
         }
+
+        // Close the cached log file so we can recreate it and release locks
+        self.log_file = None;
 
         // 3. Truncate operations log
         if self.log_file_path.exists() {
