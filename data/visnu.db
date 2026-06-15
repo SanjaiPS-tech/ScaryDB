@@ -1,0 +1,200 @@
+{
+  "db_catalog": {
+    "next_bucket_id": 2,
+    "bucket_name_to_id": {
+      "test": 0,
+      "users": 1
+    },
+    "bucket_id_to_name": {
+      "1": "users",
+      "0": "test"
+    },
+    "bucket_key_catalogs": {
+      "0": {
+        "next_key_id": 0,
+        "key_name_to_id": {},
+        "key_id_to_name": {}
+      },
+      "1": {
+        "next_key_id": 28,
+        "key_name_to_id": {
+          "cgpa": 5,
+          "language": 21,
+          "email": 8,
+          "country": 4,
+          "score": 23,
+          "badges": 24,
+          "wallet": 26,
+          "storage_used": 27,
+          "phone": 9,
+          "state": 3,
+          "following": 13,
+          "github": 17,
+          "theme": 20,
+          "semester": 7,
+          "city": 2,
+          "posts": 14,
+          "joined_at": 18,
+          "usersname": 0,
+          "attendance": 25,
+          "projects": 15,
+          "department": 6,
+          "age": 1,
+          "followers": 12,
+          "verified": 11,
+          "active": 10,
+          "last_login": 19,
+          "skills": 16,
+          "rank": 22
+        },
+        "key_id_to_name": {
+          "6": "department",
+          "15": "projects",
+          "17": "github",
+          "20": "theme",
+          "2": "city",
+          "16": "skills",
+          "12": "followers",
+          "14": "posts",
+          "23": "score",
+          "24": "badges",
+          "25": "attendance",
+          "26": "wallet",
+          "27": "storage_used",
+          "8": "email",
+          "10": "active",
+          "0": "usersname",
+          "13": "following",
+          "4": "country",
+          "5": "cgpa",
+          "11": "verified",
+          "21": "language",
+          "22": "rank",
+          "9": "phone",
+          "1": "age",
+          "3": "state",
+          "7": "semester",
+          "18": "joined_at",
+          "19": "last_login"
+        }
+      }
+    }
+  },
+  "data": {
+    "1": {
+      "9": {
+        "type": "String",
+        "value": "9876543210"
+      },
+      "17": {
+        "type": "String",
+        "value": "SanjaiPS-tech"
+      },
+      "2": {
+        "type": "String",
+        "value": "Madurai"
+      },
+      "20": {
+        "type": "String",
+        "value": "dark"
+      },
+      "23": {
+        "type": "Int",
+        "value": 9250
+      },
+      "3": {
+        "type": "String",
+        "value": "Tamil Nadu"
+      },
+      "11": {
+        "type": "Bool",
+        "value": true
+      },
+      "10": {
+        "type": "Bool",
+        "value": true
+      },
+      "12": {
+        "type": "Int",
+        "value": 120
+      },
+      "15": {
+        "type": "Int",
+        "value": 8
+      },
+      "7": {
+        "type": "Int",
+        "value": 6
+      },
+      "14": {
+        "type": "Int",
+        "value": 42
+      },
+      "25": {
+        "type": "Float",
+        "value": 92.5
+      },
+      "27": {
+        "type": "Int",
+        "value": 2048
+      },
+      "5": {
+        "type": "Float",
+        "value": 8.7
+      },
+      "24": {
+        "type": "Int",
+        "value": 12
+      },
+      "6": {
+        "type": "String",
+        "value": "CSE"
+      },
+      "18": {
+        "type": "Int",
+        "value": 1749900000
+      },
+      "0": {
+        "type": "String",
+        "value": "Sanjai"
+      },
+      "8": {
+        "type": "String",
+        "value": "sanjai@example.com"
+      },
+      "13": {
+        "type": "Int",
+        "value": 85
+      },
+      "16": {
+        "type": "String",
+        "value": "Rust,Java,PHP"
+      },
+      "4": {
+        "type": "String",
+        "value": "India"
+      },
+      "19": {
+        "type": "Int",
+        "value": 1749950000
+      },
+      "21": {
+        "type": "String",
+        "value": "en"
+      },
+      "26": {
+        "type": "Float",
+        "value": 1500.75
+      },
+      "22": {
+        "type": "Int",
+        "value": 15
+      },
+      "1": {
+        "type": "Int",
+        "value": 20
+      }
+    },
+    "0": {}
+  }
+}

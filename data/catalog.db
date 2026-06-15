@@ -1,9 +1,11 @@
 {
-  "next_db_id": 3,
+  "next_db_id": 4,
   "db_name_to_id": {
+    "visnu": 3,
     "my_db": 2
   },
   "db_id_to_name": {
+    "3": "visnu",
     "2": "my_db"
   }
 }

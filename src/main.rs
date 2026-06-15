@@ -299,6 +299,8 @@ fn run_client() {
             break;
         }
 
+        let start_time = std::time::Instant::now();
+
         // Send to server
         if write_stream.write_all(line.as_bytes()).is_err() || write_stream.write_all(b"\n").is_err() || write_stream.flush().is_err() {
             println!("Connection to server lost.");
@@ -311,6 +313,8 @@ fn run_client() {
             println!("Connection to server lost while reading response.");
             break;
         }
+
+        let duration = start_time.elapsed();
 
         if resp_line.is_empty() {
             println!("Empty response from server.");
@@ -325,6 +329,16 @@ fn run_client() {
                 } else {
                     println!("ERROR: {}", wire_res.message);
                 }
+                
+                let secs = duration.as_secs_f64();
+                let time_str = if secs >= 1.0 {
+                    format!("{:.2} sec", secs)
+                } else if secs >= 0.001 {
+                    format!("{:.2} ms", secs * 1000.0)
+                } else {
+                    format!("{:.2} µs", secs * 1_000_000.0)
+                };
+                println!("({})", time_str);
             }
             Err(e) => {
                 println!("Failed to parse server response: {}. Raw: {}", e, resp_line);
