@@ -438,13 +438,17 @@ fn run_client(is_standalone: bool) {
                 } else {
                     println!("ERROR: {}", wire_res.message);
                 }
-
+                
                 if is_standalone {
-                    if duration.as_secs() > 0 {
-                        println!("({:.2}s)", duration.as_secs_f64());
+                    let secs = duration.as_secs_f64();
+                    let time_str = if secs >= 1.0 {
+                        format!("{:.2} sec", secs)
+                    } else if secs >= 0.001 {
+                        format!("{:.2} ms", secs * 1000.0)
                     } else {
-                        println!("({:.2}ms)", duration.as_secs_f64() * 1000.0);
-                    }
+                        format!("{:.2} µs", secs * 1_000_000.0)
+                    };
+                    println!("({})", time_str);
                 }
             }
             Err(e) => {
