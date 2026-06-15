@@ -37,9 +37,10 @@ fn main() {
     };
 
     match mode.as_str() {
-        "server" => run_server(),
-        "client" => run_client(),
-        "log-read" => {
+        "standalone" | "--standalone" => run_standalone(),
+        "server" | "--server" => run_server(),
+        "client" | "--client" => run_client(),
+        "log-read" | "--log-read" => {
             if args.len() < 3 {
                 println!("Usage: scarydb log-read <path_to_operations.log>");
                 return;
@@ -47,7 +48,7 @@ fn main() {
             run_log_reader(&args[2]);
         }
         _ => {
-            println!("Unknown mode: {}. Use 'server', 'client', or 'log-read'.", mode);
+            println!("Unknown mode: {}. Use 'standalone', 'server', 'client', or 'log-read'.", mode);
         }
     }
 }
@@ -63,6 +64,71 @@ impl Drop for DatabaseSystem {
             println!("Final checkpoint written successfully. Goodbye!");
         }
     }
+}
+
+// --- STANDALONE MODE ---
+
+fn run_standalone() {
+    println!("=== ScaryDB Standalone Mode (Server + Client) ===");
+    let config = match Config::load_or_create(CONFIG_PATH) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Fatal: Failed to load configuration: {}", e);
+            return;
+        }
+    };
+
+    let mut system = DatabaseSystem::new(config.clone(), CONFIG_PATH);
+    if let Err(e) = system.init_and_restore() {
+        eprintln!("Fatal: Storage initialization failed: {}", e);
+        return;
+    }
+
+    let system_arc = Arc::new(Mutex::new(system));
+    let (request_tx, request_rx) = mpsc::channel::<Request>();
+    let request_rx_arc = Arc::new(Mutex::new(request_rx));
+
+    let _worker_pool = WorkerPool::new(config.server.workers, request_rx_arc, Arc::clone(&system_arc));
+
+    let address = format!("{}:{}", config.network.host, config.network.port);
+    let listener = match TcpListener::bind(&address) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Fatal: Failed to bind to TCP address {}: {}", address, e);
+            return;
+        }
+    };
+    
+    let sys_for_server = Arc::clone(&system_arc);
+    thread::spawn(move || {
+        for stream in listener.incoming() {
+            match stream {
+                Ok(s) => {
+                    let tx = request_tx.clone();
+                    let sys = Arc::clone(&sys_for_server);
+                    thread::spawn(move || {
+                        handle_client_connection(s, tx, sys);
+                    });
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    thread::sleep(std::time::Duration::from_millis(100)); // Give server a moment to bind
+    
+    // Now run client directly in the main thread
+    run_client();
+    
+    println!("Standalone client exited. Saving DB state...");
+    let mut sys = system_arc.lock().unwrap();
+    let sys_ref = &mut *sys;
+    if let Err(e) = sys_ref.persistence.checkpoint(&sys_ref.engine) {
+        eprintln!("Failed to save database state on shutdown: {}", e);
+    } else {
+        println!("Final checkpoint written successfully. Goodbye!");
+    }
+    std::process::exit(0);
 }
 
 // --- SERVER MODE ---

@@ -6,22 +6,30 @@ A high-performance, in-memory, actor-based hierarchical database written in Rust
 
 ## 🚀 Getting Started (CLI Modes)
 
-ScaryDB compiles into a multi-purpose executable that supports three running modes. Run these using Cargo:
+ScaryDB compiles into a multi-purpose executable that supports four running modes. Run these using Cargo:
 
-### 1. Start the Database Server
+### **🌟 1. Standalone Mode (Recommended for Development) 🌟**
+**This mode starts both the database server in the background and the interactive REPL client in the foreground simultaneously.** This is the easiest way to start using ScaryDB!
+```bash
+cargo run -- standalone
+# OR
+cargo run -- --standalone
+```
+
+### 2. Start the Database Server
 Starts the TCP server on the host and port defined in `config.json`.
 ```bash
 cargo run -- server
 ```
 >*Note: If no mode argument is supplied, ScaryDB defaults to running as a server.*
 
-### 2. Launch the Interactive REPL Client
+### 3. Launch the Interactive REPL Client
 Launches the command-line client to connect and execute queries against a running server.
 ```bash
 cargo run -- client
 ```
 
-### 3. Read the Binary WAL Log
+### 4. Read the Binary WAL Log
 Decodes and translates a binary transaction log (`operations.log`) into a human-readable text stream of transaction actions.
 ```bash
 cargo run -- log-read <path_to_operations.log>
