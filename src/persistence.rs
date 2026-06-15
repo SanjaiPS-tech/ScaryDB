@@ -356,8 +356,12 @@ impl PersistenceManager {
         if self.catalog_path.exists() {
             let catalog_json = fs::read_to_string(&self.catalog_path)
                 .map_err(|e| format!("Failed to read catalog file: {}", e))?;
-            let catalog: Catalog = serde_json::from_str(&catalog_json)
-                .map_err(|e| format!("Failed to parse catalog file: {}", e))?;
+            let catalog: Catalog = if catalog_json.trim().is_empty() {
+                Catalog::default()
+            } else {
+                serde_json::from_str(&catalog_json)
+                    .map_err(|e| format!("Failed to parse catalog file: {}", e))?
+            };
             engine.global_catalog = catalog;
 
             // 2. Load individual database files
@@ -366,8 +370,12 @@ impl PersistenceManager {
                 if db_file_path.exists() {
                     let db_json = fs::read_to_string(&db_file_path)
                         .map_err(|e| format!("Failed to read database file {}: {}", db_name, e))?;
-                    let db_state: DatabaseState = serde_json::from_str(&db_json)
-                        .map_err(|e| format!("Failed to parse database file {}: {}", db_name, e))?;
+                    let db_state: DatabaseState = if db_json.trim().is_empty() {
+                        DatabaseState::default()
+                    } else {
+                        serde_json::from_str(&db_json)
+                            .map_err(|e| format!("Failed to parse database file {}: {}", db_name, e))?
+                    };
                     engine.databases.insert(db_id, db_state);
                 } else {
                     // Initialize if missing

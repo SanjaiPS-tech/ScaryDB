@@ -14,10 +14,13 @@ use std::env;
 use std::io::{self, BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use worker::{DatabaseSystem, Request, Response, WorkerPool};
+
+pub static QUIET: AtomicBool = AtomicBool::new(false);
 
 #[derive(Serialize, Deserialize, Debug)]
 struct WireResponse {
@@ -39,7 +42,7 @@ fn main() {
     match mode.as_str() {
         "standalone" | "--standalone" => run_standalone(),
         "server" | "--server" => run_server(),
-        "client" | "--client" => run_client(),
+        "client" | "--client" => run_client(false),
         "log-read" | "--log-read" => {
             if args.len() < 3 {
                 println!("Usage: scarydb log-read <path_to_operations.log>");
@@ -57,11 +60,15 @@ fn main() {
 
 impl Drop for DatabaseSystem {
     fn drop(&mut self) {
-        println!("Shutting down ScaryDB... Performing final database checkpoint.");
+        if !crate::QUIET.load(Ordering::Relaxed) {
+            println!("Shutting down ScaryDB... Performing final database checkpoint.");
+        }
         if let Err(e) = self.persistence.checkpoint(&self.engine) {
             eprintln!("Failed to save database state on shutdown: {}", e);
         } else {
-            println!("Final checkpoint written successfully. Goodbye!");
+            if !crate::QUIET.load(Ordering::Relaxed) {
+                println!("Final checkpoint written successfully. Goodbye!");
+            }
         }
     }
 }
@@ -69,6 +76,7 @@ impl Drop for DatabaseSystem {
 // --- STANDALONE MODE ---
 
 fn run_standalone() {
+    QUIET.store(true, Ordering::Relaxed);
     println!("=== ScaryDB Standalone Mode (Server + Client) ===");
     let config = match Config::load_or_create(CONFIG_PATH) {
         Ok(c) => c,
@@ -118,15 +126,20 @@ fn run_standalone() {
     thread::sleep(std::time::Duration::from_millis(100)); // Give server a moment to bind
     
     // Now run client directly in the main thread
-    run_client();
+    run_client(true);
     
-    println!("Standalone client exited. Saving DB state...");
+    let quiet = QUIET.load(Ordering::Relaxed);
+    if !quiet {
+        println!("Standalone client exited. Saving DB state...");
+    }
     let mut sys = system_arc.lock().unwrap();
     let sys_ref = &mut *sys;
     if let Err(e) = sys_ref.persistence.checkpoint(&sys_ref.engine) {
         eprintln!("Failed to save database state on shutdown: {}", e);
     } else {
-        println!("Final checkpoint written successfully. Goodbye!");
+        if !quiet {
+            println!("Final checkpoint written successfully. Goodbye!");
+        }
     }
     std::process::exit(0);
 }
@@ -198,7 +211,11 @@ fn handle_client_connection(
         }
     };
     let peer_addr = write_stream.peer_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string());
-    println!("Client connected: {}", peer_addr);
+    
+    let quiet = QUIET.load(Ordering::Relaxed);
+    if !quiet {
+        println!("Client connected: {}", peer_addr);
+    }
 
     let reader = BufReader::new(stream);
     let mut db_context: Option<u32> = None;
@@ -216,22 +233,30 @@ fn handle_client_connection(
             continue;
         }
 
-        println!("[Server] Received line: '{}'", cmd_text);
+        if !quiet {
+            println!("[Server] Received line: '{}'", cmd_text);
+        }
 
         // Check if exit command
         if cmd_text.to_uppercase() == "EXIT" || cmd_text.to_uppercase() == "QUIT" {
-            println!("[Server] Client requested disconnect.");
+            if !quiet {
+                println!("[Server] Client requested disconnect.");
+            }
             break;
         }
 
         // Parse command
         let command = match parse_command(cmd_text) {
             Ok(cmd) => {
-                println!("[Server] Parsed command: {:?}", cmd);
+                if !quiet {
+                    println!("[Server] Parsed command: {:?}", cmd);
+                }
                 cmd
             }
             Err(err_msg) => {
-                println!("[Server] Parse error: {}", err_msg);
+                if !quiet {
+                    println!("[Server] Parse error: {}", err_msg);
+                }
                 let wire_res = WireResponse {
                     status: "err".to_string(),
                     message: err_msg,
@@ -249,22 +274,32 @@ fn handle_client_connection(
             response_tx: response_tx.clone(),
         };
 
-        println!("[Server] Enqueuing request to worker pool...");
+        if !quiet {
+            println!("[Server] Enqueuing request to worker pool...");
+        }
         if request_tx.send(req).is_err() {
-            eprintln!("[Server] Failed to route request: Server worker queue closed.");
+            if !quiet {
+                eprintln!("[Server] Failed to route request: Server worker queue closed.");
+            }
             break;
         }
 
         // Wait for response
-        println!("[Server] Waiting for worker response...");
+        if !quiet {
+            println!("[Server] Waiting for worker response...");
+        }
         let res = match response_rx.recv() {
             Ok(r) => r,
             Err(_) => {
-                eprintln!("[Server] Response channel closed unexpectedly.");
+                if !quiet {
+                    eprintln!("[Server] Response channel closed unexpectedly.");
+                }
                 break;
             }
         };
-        println!("[Server] Worker response received: {:?}", res.result);
+        if !quiet {
+            println!("[Server] Worker response received: {:?}", res.result);
+        }
 
         // Update local session db_context
         db_context = res.updated_db_context;
@@ -283,15 +318,23 @@ fn handle_client_connection(
             },
         };
 
-        println!("[Server] Sending response to client...");
+        if !quiet {
+            println!("[Server] Sending response to client...");
+        }
         if send_wire_response(&mut write_stream, &wire_res).is_err() {
-            println!("[Server] Failed to send response to client.");
+            if !quiet {
+                println!("[Server] Failed to send response to client.");
+            }
             break;
         }
-        println!("[Server] Response successfully sent.");
+        if !quiet {
+            println!("[Server] Response successfully sent.");
+        }
     }
 
-    println!("Client disconnected: {}", peer_addr);
+    if !quiet {
+        println!("Client disconnected: {}", peer_addr);
+    }
 }
 
 fn get_active_db_name(system: &Arc<Mutex<DatabaseSystem>>, db_id: Option<u32>) -> Option<String> {
@@ -302,16 +345,16 @@ fn get_active_db_name(system: &Arc<Mutex<DatabaseSystem>>, db_id: Option<u32>) -
 }
 
 fn send_wire_response(stream: &mut TcpStream, res: &WireResponse) -> io::Result<()> {
-    let json_bytes = serde_json::to_vec(res).unwrap();
+    let mut json_bytes = serde_json::to_vec(res).unwrap();
+    json_bytes.push(b'\n');
     stream.write_all(&json_bytes)?;
-    stream.write_all(b"\n")?;
     stream.flush()?;
     Ok(())
 }
 
 // --- CLIENT MODE (REPL) ---
 
-fn run_client() {
+fn run_client(is_standalone: bool) {
     println!("=== ScaryDB CLI Client ===");
     let config = match Config::load_or_create(CONFIG_PATH) {
         Ok(c) => c,
@@ -365,6 +408,8 @@ fn run_client() {
             break;
         }
 
+        let start_time = std::time::Instant::now();
+
         // Send to server
         if write_stream.write_all(line.as_bytes()).is_err() || write_stream.write_all(b"\n").is_err() || write_stream.flush().is_err() {
             println!("Connection to server lost.");
@@ -378,6 +423,8 @@ fn run_client() {
             break;
         }
 
+        let duration = start_time.elapsed();
+
         if resp_line.is_empty() {
             println!("Empty response from server.");
             break;
@@ -390,6 +437,14 @@ fn run_client() {
                     println!("{}", wire_res.message);
                 } else {
                     println!("ERROR: {}", wire_res.message);
+                }
+
+                if is_standalone {
+                    if duration.as_secs() > 0 {
+                        println!("({:.2}s)", duration.as_secs_f64());
+                    } else {
+                        println!("({:.2}ms)", duration.as_secs_f64() * 1000.0);
+                    }
                 }
             }
             Err(e) => {

@@ -79,12 +79,16 @@ impl DatabaseSystem {
     fn check_checkpoint(&mut self) {
         self.mutations_since_checkpoint += 1;
         if self.mutations_since_checkpoint >= self.config.storage.checkpoint_interval_ops {
-            println!("Checkpoint limit reached. Saving DB state and truncating log...");
+            if !crate::QUIET.load(std::sync::atomic::Ordering::Relaxed) {
+                println!("Checkpoint limit reached. Saving DB state and truncating log...");
+            }
             if let Err(e) = self.persistence.checkpoint(&self.engine) {
                 eprintln!("Error performing database checkpoint: {}", e);
             } else {
                 self.mutations_since_checkpoint = 0;
-                println!("Checkpoint successfully complete!");
+                if !crate::QUIET.load(std::sync::atomic::Ordering::Relaxed) {
+                    println!("Checkpoint successfully complete!");
+                }
             }
         }
     }
@@ -340,7 +344,9 @@ impl WorkerPool {
             let sys = Arc::clone(&system);
             
             let handle = thread::spawn(move || {
-                println!("Worker thread {} started and waiting for requests...", id);
+                if !crate::QUIET.load(std::sync::atomic::Ordering::Relaxed) {
+                    println!("Worker thread {} started and waiting for requests...", id);
+                }
                 loop {
                     // 1. Pull next request from Request Queue
                     let request = {
@@ -349,7 +355,9 @@ impl WorkerPool {
                             Ok(req) => req,
                             Err(_) => {
                                 // Channel closed, shutdown worker
-                                println!("Worker thread {} channel closed. Shutting down.", id);
+                                if !crate::QUIET.load(std::sync::atomic::Ordering::Relaxed) {
+                                    println!("Worker thread {} channel closed. Shutting down.", id);
+                                }
                                 break;
                             }
                         }
