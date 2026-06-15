@@ -97,6 +97,28 @@ The following settings are managed in `config.json`:
 
 ---
 
+## ⚡ Performance Benchmarks & Testing
+
+ScaryDB is optimized to perform as a blazingly fast in-memory key-value store with cached WAL descriptor streaming. 
+
+### Latency Profiles (Optimized Release Mode)
+*   **GET (Reads)**: **~8,800 operations/second** (Average latency: **~112 microseconds**)
+*   **SET (Writes)**: **~7,500 operations/second** (Average latency: **~131 microseconds**)
+
+### 🏃 Running Benchmarks
+We maintain an explicit benchmarking binary. Since ScaryDB configures `default-run = "scarydb"`, cargo commands default to the database server. To run the benchmark, you must explicitly state the benchmark binary target:
+
+1. Start the database server in a separate terminal:
+   ```bash
+   cargo run --release --bin scarydb -- server
+   ```
+2. Execute the benchmark client in your main terminal:
+   ```bash
+   cargo run --release --bin benchmark
+   ```
+
+---
+
 # ⚠️ Some known errors we have encountered.
 
 ## ⚠️ Troubleshooting: OS Error 32 (File in use)
