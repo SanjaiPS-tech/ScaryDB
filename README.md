@@ -4,11 +4,11 @@ A high-performance, in-memory, actor-based hierarchical database written in Rust
 
 ---
 
-## 🚀 Getting Started (CLI Modes)
+## Getting Started (CLI Modes)
 
 ScaryDB compiles into a multi-purpose executable that supports four running modes. Run these using Cargo:
 
-### **🌟 1. Standalone Mode (Recommended for Development) 🌟**
+### **1. Standalone Mode (Recommended for Development) **
 **This mode starts both the database server in the background and the interactive REPL client in the foreground simultaneously.** This is the easiest way to start using ScaryDB!
 ```bash
 cargo run -- standalone
@@ -97,7 +97,7 @@ The following settings are managed in `config.json`:
 
 ---
 
-## ⚡ Performance Benchmarks & Testing
+## Performance Benchmarks & Testing
 
 ScaryDB is optimized to perform as a blazingly fast in-memory key-value store with cached WAL descriptor streaming. 
 
@@ -105,7 +105,7 @@ ScaryDB is optimized to perform as a blazingly fast in-memory key-value store wi
 *   **GET (Reads)**: **~8,800 operations/second** (Average latency: **~112 microseconds**)
 *   **SET (Writes)**: **~7,500 operations/second** (Average latency: **~131 microseconds**)
 
-### 🏃 Running Benchmarks
+### Running Benchmarks
 We maintain an explicit benchmarking binary. Since ScaryDB configures `default-run = "scarydb"`, cargo commands default to the database server. To run the benchmark, you must explicitly state the benchmark binary target:
 
 1. Start the database server in a separate terminal:
@@ -146,7 +146,7 @@ This happens because the ScaryDB Server or REPL Client is running in the backgro
         pkill scarydb
         ```
 
-### 🔒 Safety Precautions & Data Integrity
+### Safety Precautions & Data Integrity
 *   **Final Checkpoints:** ScaryDB executes a graceful final checkpoint (`catalog.db` and database JSON state serialization) on clean exit to save everything to disk.
 *   **WAL Persistence:** If you are forced to use a force-kill command (e.g. `Stop-Process` or `taskkill /F`), the final checkpoint will be skipped. However, ScaryDB's Write-Ahead Log (`operations.log`) commits mutations immediately in binary format. On the next start, the engine will replay the WAL transactions to restore your state.
 *   **Best Practice:** Always try sending a standard interrupt signal (`Ctrl + C` or normal termination) before executing a force-kill, to ensure the JSON checkpoint files and catalogs are perfectly synchronized.
