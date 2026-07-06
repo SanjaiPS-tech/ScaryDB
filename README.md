@@ -102,8 +102,8 @@ The following settings are managed in `config.json`:
 ScaryDB is optimized to perform as a blazingly fast in-memory key-value store with cached WAL descriptor streaming. 
 
 ### Latency Profiles (Optimized Release Mode)
-*   **GET (Reads)**: **~8,800 operations/second** (Average latency: **~112 microseconds**)
-*   **SET (Writes)**: **~7,500 operations/second** (Average latency: **~131 microseconds**)
+*   **GET (Reads)**: **~22,700 operations/second** (Average latency: **~44 microseconds**)
+*   **SET (Writes)**: **~13,200 operations/second** (Average latency: **~76 microseconds**)
 
 ### Running Benchmarks
 We maintain an explicit benchmarking binary. Since ScaryDB configures `default-run = "scarydb"`, cargo commands default to the database server. To run the benchmark, you must explicitly state the benchmark binary target:
