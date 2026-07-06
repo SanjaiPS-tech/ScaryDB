@@ -3,8 +3,8 @@ use crate::engine::StorageEngine;
 use crate::parser::Command;
 use crate::persistence::{LogOp, PersistenceManager};
 use crate::value::Value;
+use std::sync::{Arc, Mutex, RwLock};
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{Arc, Mutex};
 use std::thread;
 
 pub struct Request {
@@ -301,8 +301,7 @@ SCC (System Control Commands)
 CCC (Configuration Control Commands)
   LIST CONFIG;
   GET CONFIG <property>;
-  SET CONFIG <property> <value>;"
-            .to_string()
+  SET CONFIG <property> <value>;".to_string()
     }
 
     fn execute_list_config(&self) -> String {
@@ -336,7 +335,7 @@ impl WorkerPool {
     pub fn new(
         num_workers: usize,
         request_rx: Arc<Mutex<Receiver<Request>>>,
-        system: Arc<Mutex<DatabaseSystem>>,
+        system: Arc<RwLock<DatabaseSystem>>,
     ) -> Self {
         let mut workers = Vec::new();
         for id in 0..num_workers {
@@ -350,7 +349,7 @@ impl WorkerPool {
                 loop {
                     // 1. Pull next request from Request Queue
                     let request = {
-                        let rx_lock = rx.lock().unwrap();
+                        let rx_lock = rx.lock().expect("mutex poisoned");
                         match rx_lock.recv() {
                             Ok(req) => req,
                             Err(_) => {
@@ -365,7 +364,7 @@ impl WorkerPool {
 
                     // 2. Execute command
                     let response = {
-                        let mut sys_lock = sys.lock().unwrap();
+                        let mut sys_lock = sys.write().expect("rwlock poisoned");
                         sys_lock.execute_command(request.command, request.db_context)
                     };
 

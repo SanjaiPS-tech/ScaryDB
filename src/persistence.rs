@@ -4,6 +4,9 @@ use crate::catalog::Catalog;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Sender, Receiver};
+use std::thread;
+use std::time::Duration;
 
 pub const MAGIC_BYTES: &[u8; 4] = b"SCRY";
 
@@ -15,6 +18,7 @@ pub enum LogOp {
     DropBucket { db_name: String, bucket_name: String },
     Set { db_name: String, bucket_name: String, key_name: String, value: Value },
     Del { db_name: String, bucket_name: String, key_name: String },
+    Batch(Vec<LogOp>),
 }
 
 impl LogOp {
@@ -51,6 +55,15 @@ impl LogOp {
                 write_string(&mut buf, db_name);
                 write_string(&mut buf, bucket_name);
                 write_string(&mut buf, key_name);
+            }
+            LogOp::Batch(ops) => {
+                buf.push(7);
+                buf.extend_from_slice(&(ops.len() as u32).to_be_bytes());
+                for op in ops {
+                    let serialized = op.serialize();
+                    buf.extend_from_slice(&(serialized.len() as u32).to_be_bytes());
+                    buf.extend(serialized);
+                }
             }
         }
         buf
@@ -95,6 +108,41 @@ impl LogOp {
                 let bucket_name = read_string(&mut cursor, data)?;
                 let key_name = read_string(&mut cursor, data)?;
                 Ok(LogOp::Del { db_name, bucket_name, key_name })
+            }
+            7 => {
+                if cursor + 4 > data.len() {
+                    return Err("Buffer overflow reading batch count".to_string());
+                }
+                let count = u32::from_be_bytes([
+                    data[cursor],
+                    data[cursor + 1],
+                    data[cursor + 2],
+                    data[cursor + 3],
+                ]) as usize;
+                cursor += 4;
+                
+                let mut ops = Vec::with_capacity(count);
+                for _ in 0..count {
+                    if cursor + 4 > data.len() {
+                        return Err("Buffer overflow reading batch op length".to_string());
+                    }
+                    let op_len = u32::from_be_bytes([
+                        data[cursor],
+                        data[cursor + 1],
+                        data[cursor + 2],
+                        data[cursor + 3],
+                    ]) as usize;
+                    cursor += 4;
+                    
+                    if cursor + op_len > data.len() {
+                        return Err("Buffer overflow reading batch op".to_string());
+                    }
+                    
+                    let op = LogOp::deserialize(&data[cursor..cursor + op_len])?;
+                    cursor += op_len;
+                    ops.push(op);
+                }
+                Ok(LogOp::Batch(ops))
             }
             other => Err(format!("Unknown log op code: {}", other)),
         }
@@ -208,6 +256,16 @@ pub struct PersistenceManager {
     catalog_path: PathBuf,
     next_tx_id: u64,
     log_file: Option<File>,
+    // Batched WAL writer
+    wal_tx: Option<Sender<BatchRequest>>,
+    wal_handle: Option<thread::JoinHandle<()>>,
+}
+
+#[derive(Debug)]
+enum BatchRequest {
+    Op(LogOp),
+    Flush(Sender<Result<u64, String>>),
+    Shutdown,
 }
 
 impl PersistenceManager {
@@ -219,20 +277,106 @@ impl PersistenceManager {
             data_dir: dir,
             next_tx_id: 1,
             log_file: None,
+            wal_tx: None,
+            wal_handle: None,
         }
     }
 
     pub fn init(&mut self) -> Result<(), String> {
         fs::create_dir_all(&self.data_dir)
             .map_err(|e| format!("Failed to create data directory: {}", e))?;
+        
+        // Start the batched WAL writer thread
+        let log_file_path = self.log_file_path.clone();
+        let (tx, rx) = mpsc::channel::<BatchRequest>();
+        
+        let handle = thread::spawn(move || {
+            let mut file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_file_path)
+                .map_err(|e| format!("Failed to open log file: {}", e)).unwrap();
+            
+            let mut batch = Vec::new();
+            let mut last_flush = std::time::Instant::now();
+            const BATCH_MAX_SIZE: usize = 100;
+            const FLUSH_INTERVAL_MS: u64 = 10;
+            
+            loop {
+                match rx.recv_timeout(Duration::from_millis(FLUSH_INTERVAL_MS)) {
+                    Ok(BatchRequest::Op(op)) => {
+                        batch.push(op);
+                    }
+                    Ok(BatchRequest::Flush(response_tx)) => {
+                        // Flush current batch
+                        if !batch.is_empty() {
+                            let _ = Self::write_batch(&mut file, &mut batch, &mut 0u64);
+                        }
+                        let _ = response_tx.send(Ok(0));
+                    }
+                    Ok(BatchRequest::Shutdown) => {
+                        // Final flush
+                        if !batch.is_empty() {
+                            let _ = Self::write_batch(&mut file, &mut batch, &mut 0u64);
+                        }
+                        break;
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        // Periodic flush
+                        if !batch.is_empty() && last_flush.elapsed() >= Duration::from_millis(FLUSH_INTERVAL_MS) {
+                            let _ = Self::write_batch(&mut file, &mut batch, &mut 0u64);
+                            last_flush = std::time::Instant::now();
+                        }
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        break;
+                    }
+                }
+            }
+        });
+        
+        self.wal_tx = Some(tx);
+        self.wal_handle = Some(handle);
         Ok(())
     }
+    
+    fn write_batch(file: &mut File, batch: &mut Vec<LogOp>, tx_id_counter: &mut u64) -> Result<u64, String> {
+        if batch.is_empty() {
+            return Ok(0);
+        }
+        
+        let batch_op = LogOp::Batch(batch.drain(..).collect());
+        let tx_id = *tx_id_counter;
+        *tx_id_counter += 1;
+        
+        let payload = batch_op.serialize();
+        let mut entry = Vec::new();
+        entry.extend_from_slice(MAGIC_BYTES);
+        entry.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+        entry.extend_from_slice(&tx_id.to_be_bytes());
+        entry.extend(payload);
+        
+        file.write_all(&entry)
+            .map_err(|e| format!("Failed to write batch to log file: {}", e))?;
+        file.flush()
+            .map_err(|e| format!("Failed to flush log file: {}", e))?;
+        
+        Ok(tx_id)
+    }
 
-    /// Append an operation to the binary operations.log WAL file.
     pub fn append_op(&mut self, op: &LogOp) -> Result<u64, String> {
         let tx_id = self.next_tx_id;
         self.next_tx_id += 1;
-
+        
+        if let Some(ref tx) = self.wal_tx {
+            tx.send(BatchRequest::Op(op.clone()))
+                .map_err(|e| format!("Failed to send to WAL thread: {}", e))?;
+            // For now, we don't wait for the flush response
+            // This gives us async batched writes
+            return Ok(tx_id);
+        }
+        
+        // Fallback to direct write if WAL thread not started
         let payload = op.serialize();
         let mut entry = Vec::new();
         entry.extend_from_slice(MAGIC_BYTES);
@@ -259,8 +403,28 @@ impl PersistenceManager {
 
         Ok(tx_id)
     }
-
-    /// Read and decode all operations in operations.log.
+    
+    pub fn flush(&mut self) -> Result<(), String> {
+        if let Some(ref tx) = self.wal_tx {
+            let (response_tx, response_rx) = mpsc::channel();
+            tx.send(BatchRequest::Flush(response_tx))
+                .map_err(|e| format!("Failed to send flush request: {}", e))?;
+            response_rx.recv()
+                .map_err(|e| format!("Failed to receive flush response: {}", e))??;
+        }
+        Ok(())
+    }
+    
+    pub fn shutdown(&mut self) -> Result<(), String> {
+        if let Some(tx) = self.wal_tx.take() {
+            tx.send(BatchRequest::Shutdown)
+                .map_err(|e| format!("Failed to send shutdown: {}", e))?;
+        }
+        if let Some(handle) = self.wal_handle.take() {
+            handle.join().map_err(|e| format!("WAL thread panicked: {:?}", e))?;
+        }
+        Ok(())
+    }
     pub fn read_log(&self) -> Result<Vec<(u64, LogOp)>, String> {
         if !self.log_file_path.exists() {
             return Ok(Vec::new());
@@ -423,6 +587,41 @@ impl PersistenceManager {
                 LogOp::Del { db_name, bucket_name, key_name } => {
                     if let Some(db_id) = engine.global_catalog.get_db_id(&db_name) {
                         let _ = engine.del_key(db_id, &bucket_name, &key_name);
+                    }
+                }
+                LogOp::Batch(ops) => {
+                    for op in ops {
+                        match op {
+                            LogOp::CreateDb { db_name } => {
+                                let _ = engine.create_db(&db_name);
+                            }
+                            LogOp::DropDb { db_name } => {
+                                let _ = engine.drop_db(&db_name);
+                            }
+                            LogOp::CreateBucket { db_name, bucket_name } => {
+                                if let Some(db_id) = engine.global_catalog.get_db_id(&db_name) {
+                                    let _ = engine.create_bucket(db_id, &bucket_name);
+                                }
+                            }
+                            LogOp::DropBucket { db_name, bucket_name } => {
+                                if let Some(db_id) = engine.global_catalog.get_db_id(&db_name) {
+                                    let _ = engine.drop_bucket(db_id, &bucket_name);
+                                }
+                            }
+                            LogOp::Set { db_name, bucket_name, key_name, value } => {
+                                if let Some(db_id) = engine.global_catalog.get_db_id(&db_name) {
+                                    let _ = engine.set_key(db_id, &bucket_name, &key_name, value);
+                                }
+                            }
+                            LogOp::Del { db_name, bucket_name, key_name } => {
+                                if let Some(db_id) = engine.global_catalog.get_db_id(&db_name) {
+                                    let _ = engine.del_key(db_id, &bucket_name, &key_name);
+                                }
+                            }
+                            LogOp::Batch(_) => {
+                                // Nested batches not supported
+                            }
+                        }
                     }
                 }
             }

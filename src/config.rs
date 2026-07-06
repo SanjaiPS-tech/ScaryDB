@@ -72,15 +72,11 @@ impl Config {
             .map(PathBuf::from)
             .unwrap_or_else(|| path.as_ref().to_path_buf());
         
-        eprintln!("DEBUG load_or_create: config_path = {:?}", config_path);
-        eprintln!("DEBUG load_or_create: config_path.exists() = {}", config_path.exists());
-        
         if config_path.exists() {
             let content = fs::read_to_string(&config_path)
                 .map_err(|e| format!("Failed to read config file: {}", e))?;
             let mut config: Config = serde_json::from_str(&content)
                 .map_err(|e| format!("Failed to parse config file: {}", e))?;
-            eprintln!("DEBUG load_or_create: loaded workers = {}", config.server.workers);
             // Allow test port override via environment variable
             if let Ok(port_str) = std::env::var("SCARYDB_TEST_PORT") {
                 if let Ok(port) = port_str.parse::<u16>() {

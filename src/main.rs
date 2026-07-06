@@ -16,7 +16,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use worker::{DatabaseSystem, Request, Response, WorkerPool};
 
@@ -100,7 +100,7 @@ fn run_standalone() {
         return;
     }
 
-    let system_arc = Arc::new(Mutex::new(system));
+    let system_arc = Arc::new(RwLock::new(system));
     let (request_tx, request_rx) = mpsc::channel::<Request>();
     let request_rx_arc = Arc::new(Mutex::new(request_rx));
 
@@ -140,7 +140,7 @@ fn run_standalone() {
     if !quiet {
         println!("Standalone client exited. Saving DB state...");
     }
-    let mut sys = system_arc.lock().unwrap();
+    let mut sys = system_arc.write().unwrap();
     let sys_ref = &mut *sys;
     if let Err(e) = sys_ref.persistence.checkpoint(&sys_ref.engine) {
         eprintln!("Failed to save database state on shutdown: {}", e);
@@ -177,7 +177,7 @@ fn run_server() {
     }
     println!("Database storage initialized and restored.");
 
-    let system_arc = Arc::new(Mutex::new(system));
+    let system_arc = Arc::new(RwLock::new(system));
     let (request_tx, request_rx) = mpsc::channel::<Request>();
     let request_rx_arc = Arc::new(Mutex::new(request_rx));
 
@@ -213,7 +213,7 @@ fn run_server() {
 fn handle_client_connection(
     stream: TcpStream,
     request_tx: Sender<Request>,
-    system: Arc<Mutex<DatabaseSystem>>,
+    system: Arc<RwLock<DatabaseSystem>>,
 ) {
     let mut write_stream = match stream.try_clone() {
         Ok(s) => s,
@@ -349,9 +349,9 @@ fn handle_client_connection(
     }
 }
 
-fn get_active_db_name(system: &Arc<Mutex<DatabaseSystem>>, db_id: Option<u32>) -> Option<String> {
+fn get_active_db_name(system: &Arc<RwLock<DatabaseSystem>>, db_id: Option<u32>) -> Option<String> {
     db_id.and_then(|id| {
-        let sys = system.lock().unwrap();
+        let sys = system.read().unwrap();
         sys.engine.global_catalog.db_id_to_name.get(&id).cloned()
     })
 }
@@ -496,22 +496,53 @@ fn run_log_reader(path: &str) {
                         println!("[Tx {}] CREATE_BUCKET: db='{}', bucket='{}'", tx_id, db_name, bucket_name);
                     }
                     persistence::LogOp::DropBucket { db_name, bucket_name } => {
-                        println!("[Tx {}] DROP_BUCKET: db='{}', bucket='{}'", tx_id, db_name, bucket_name);
+                                            println!("[Tx {}] DROP_BUCKET: db='{}', bucket='{}'", tx_id, db_name, bucket_name);
+                                        }
+                                        persistence::LogOp::Set { db_name, bucket_name, key_name, value } => {
+                                            println!(
+                                                "[Tx {}] SET: db='{}', bucket='{}', key='{}', type='{:?}', value={}",
+                                                tx_id, db_name, bucket_name, key_name, value, value
+                                            );
+                                        }
+                                        persistence::LogOp::Del { db_name, bucket_name, key_name } => {
+                                            println!("[Tx {}] DEL: db='{}', bucket='{}', key='{}'", tx_id, db_name, bucket_name, key_name);
+                                        }
+                                        persistence::LogOp::Batch(ops) => {
+                                            println!("[Tx {}] BATCH: {} operations", tx_id, ops.len());
+                                            for op in ops {
+                                                match op {
+                                                    persistence::LogOp::CreateDb { db_name } => {
+                                                        println!("[Tx {}] CREATE_DB: name='{}'", tx_id, db_name);
+                                                    }
+                                                    persistence::LogOp::DropDb { db_name } => {
+                                                        println!("[Tx {}] DROP_DB: name='{}'", tx_id, db_name);
+                                                    }
+                                                    persistence::LogOp::CreateBucket { db_name, bucket_name } => {
+                                                        println!("[Tx {}] CREATE_BUCKET: db='{}', bucket='{}'", tx_id, db_name, bucket_name);
+                                                    }
+                                                    persistence::LogOp::DropBucket { db_name, bucket_name } => {
+                                                        println!("[Tx {}] DROP_BUCKET: db='{}', bucket='{}'", tx_id, db_name, bucket_name);
+                                                    }
+                                                    persistence::LogOp::Set { db_name, bucket_name, key_name, value } => {
+                                                        println!(
+                                                            "[Tx {}] SET: db='{}', bucket='{}', key='{}', type='{:?}', value={}",
+                                                            tx_id, db_name, bucket_name, key_name, value, value
+                                                        );
+                                                    }
+                                                    persistence::LogOp::Del { db_name, bucket_name, key_name } => {
+                                                        println!("[Tx {}] DEL: db='{}', bucket='{}', key='{}'", tx_id, db_name, bucket_name, key_name);
+                                                    }
+                                                    persistence::LogOp::Batch(_) => {
+                                                        println!("[Tx {}] NESTED_BATCH (unexpected)", tx_id);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Error reading operations log file: {}", e);
+                            }
+                        }
                     }
-                    persistence::LogOp::Set { db_name, bucket_name, key_name, value } => {
-                        println!(
-                            "[Tx {}] SET: db='{}', bucket='{}', key='{}', type='{:?}', value={}",
-                            tx_id, db_name, bucket_name, key_name, value, value
-                        );
-                    }
-                    persistence::LogOp::Del { db_name, bucket_name, key_name } => {
-                        println!("[Tx {}] DEL: db='{}', bucket='{}', key='{}'", tx_id, db_name, bucket_name, key_name);
-                    }
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("Error reading operations log file: {}", e);
-        }
-    }
-}
