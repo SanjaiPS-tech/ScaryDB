@@ -156,7 +156,11 @@ fn run_standalone() {
 
 fn run_server() {
     println!("=== ScaryDB Database Server ===");
-    let config = match Config::load_or_create(CONFIG_PATH) {
+    // Allow test config path override via environment variable
+    let config_path = std::env::var("SCARYDB_CONFIG_PATH")
+        .ok()
+        .unwrap_or_else(|| CONFIG_PATH.to_string());
+    let config = match Config::load_or_create(&config_path) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Fatal: Failed to load configuration: {}", e);
@@ -166,7 +170,7 @@ fn run_server() {
 
     println!("Loaded config: host={}, port={}, workers={}", config.network.host, config.network.port, config.server.workers);
 
-    let mut system = DatabaseSystem::new(config.clone(), CONFIG_PATH);
+    let mut system = DatabaseSystem::new(config.clone(), &config_path);
     if let Err(e) = system.init_and_restore() {
         eprintln!("Fatal: Storage initialization failed: {}", e);
         return;

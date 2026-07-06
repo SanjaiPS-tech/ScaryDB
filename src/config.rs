@@ -1,7 +1,7 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
@@ -51,7 +51,10 @@ impl Default for Config {
             memory: MemorySettings { max_memory_kb: 0 }, // 0 = unlimited
             network: NetworkSettings {
                 host: "127.0.0.1".to_string(),
-                port: 6379, // default port for custom DB (similar to Redis/Memcached)
+                port: std::env::var("SCARYDB_TEST_PORT")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(6379), // default port for custom DB (similar to Redis/Memcached)
             },
             metadata: RuntimeMetadata {
                 version: env!("CARGO_PKG_VERSION").to_string(),
@@ -63,17 +66,37 @@ impl Default for Config {
 
 impl Config {
     pub fn load_or_create<P: AsRef<Path>>(path: P) -> Result<Self, String> {
-        if path.as_ref().exists() {
-            let content = fs::read_to_string(&path)
+        // Allow test config path override via environment variable
+        let config_path = std::env::var("SCARYDB_CONFIG_PATH")
+            .ok()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| path.as_ref().to_path_buf());
+        
+        eprintln!("DEBUG load_or_create: config_path = {:?}", config_path);
+        eprintln!("DEBUG load_or_create: config_path.exists() = {}", config_path.exists());
+        
+        if config_path.exists() {
+            let content = fs::read_to_string(&config_path)
                 .map_err(|e| format!("Failed to read config file: {}", e))?;
             let mut config: Config = serde_json::from_str(&content)
                 .map_err(|e| format!("Failed to parse config file: {}", e))?;
+            eprintln!("DEBUG load_or_create: loaded workers = {}", config.server.workers);
+            // Allow test port override via environment variable
+            if let Ok(port_str) = std::env::var("SCARYDB_TEST_PORT") {
+                if let Ok(port) = port_str.parse::<u16>() {
+                    config.network.port = port;
+                }
+            }
+            // Allow test data dir override via environment variable
+            if let Ok(data_dir) = std::env::var("SCARYDB_TEST_DATA_DIR") {
+                config.storage.data_dir = data_dir;
+            }
             // Always set current start time on load/run
             config.metadata.startup_time = Utc::now().to_rfc3339();
             Ok(config)
         } else {
             let config = Config::default();
-            config.save(&path)?;
+            config.save(&config_path)?;
             Ok(config)
         }
     }
