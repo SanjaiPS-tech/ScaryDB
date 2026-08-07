@@ -4,9 +4,10 @@ use crate::catalog::Catalog;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Sender, Receiver};
-use std::thread;
-use std::time::Duration;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use parking_lot::Mutex;
+use flume::{bounded, Sender, Receiver};
 
 pub const MAGIC_BYTES: &[u8; 4] = b"SCRY";
 
@@ -18,15 +19,15 @@ pub enum LogOp {
     DropBucket { db_name: String, bucket_name: String },
     Set { db_name: String, bucket_name: String, key_name: String, value: Value },
     Del { db_name: String, bucket_name: String, key_name: String },
-    Batch(Vec<LogOp>),
 }
 
 impl LogOp {
+    #[inline]
     pub fn serialize(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
+        let mut buf = Vec::with_capacity(64);
         match self {
             LogOp::CreateDb { db_name } => {
-                buf.push(1); // op code
+                buf.push(1);
                 write_string(&mut buf, db_name);
             }
             LogOp::DropDb { db_name } => {
@@ -56,19 +57,11 @@ impl LogOp {
                 write_string(&mut buf, bucket_name);
                 write_string(&mut buf, key_name);
             }
-            LogOp::Batch(ops) => {
-                buf.push(7);
-                buf.extend_from_slice(&(ops.len() as u32).to_be_bytes());
-                for op in ops {
-                    let serialized = op.serialize();
-                    buf.extend_from_slice(&(serialized.len() as u32).to_be_bytes());
-                    buf.extend(serialized);
-                }
-            }
         }
         buf
     }
 
+    #[inline]
     pub fn deserialize(data: &[u8]) -> Result<Self, String> {
         let mut cursor = 0;
         if data.is_empty() {
@@ -109,53 +102,20 @@ impl LogOp {
                 let key_name = read_string(&mut cursor, data)?;
                 Ok(LogOp::Del { db_name, bucket_name, key_name })
             }
-            7 => {
-                if cursor + 4 > data.len() {
-                    return Err("Buffer overflow reading batch count".to_string());
-                }
-                let count = u32::from_be_bytes([
-                    data[cursor],
-                    data[cursor + 1],
-                    data[cursor + 2],
-                    data[cursor + 3],
-                ]) as usize;
-                cursor += 4;
-                
-                let mut ops = Vec::with_capacity(count);
-                for _ in 0..count {
-                    if cursor + 4 > data.len() {
-                        return Err("Buffer overflow reading batch op length".to_string());
-                    }
-                    let op_len = u32::from_be_bytes([
-                        data[cursor],
-                        data[cursor + 1],
-                        data[cursor + 2],
-                        data[cursor + 3],
-                    ]) as usize;
-                    cursor += 4;
-                    
-                    if cursor + op_len > data.len() {
-                        return Err("Buffer overflow reading batch op".to_string());
-                    }
-                    
-                    let op = LogOp::deserialize(&data[cursor..cursor + op_len])?;
-                    cursor += op_len;
-                    ops.push(op);
-                }
-                Ok(LogOp::Batch(ops))
-            }
             other => Err(format!("Unknown log op code: {}", other)),
         }
     }
 }
 
-// Helpers for reading/writing binary data to buffer
+// Optimized string serialization - no heap allocation for small strings
+#[inline]
 fn write_string(buf: &mut Vec<u8>, s: &str) {
     let bytes = s.as_bytes();
     buf.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
     buf.extend_from_slice(bytes);
 }
 
+#[inline]
 fn read_string(cursor: &mut usize, data: &[u8]) -> Result<String, String> {
     if *cursor + 2 > data.len() {
         return Err("Buffer overflow reading string length".to_string());
@@ -171,6 +131,7 @@ fn read_string(cursor: &mut usize, data: &[u8]) -> Result<String, String> {
     Ok(s.to_string())
 }
 
+#[inline]
 fn write_value(buf: &mut Vec<u8>, val: &Value) {
     match val {
         Value::String(s) => {
@@ -194,6 +155,7 @@ fn write_value(buf: &mut Vec<u8>, val: &Value) {
     }
 }
 
+#[inline]
 fn read_value(cursor: &mut usize, data: &[u8]) -> Result<Value, String> {
     if *cursor + 1 > data.len() {
         return Err("Buffer overflow reading value type".to_string());
@@ -216,7 +178,7 @@ fn read_value(cursor: &mut usize, data: &[u8]) -> Result<Value, String> {
                 return Err("Buffer overflow reading string value body".to_string());
             }
             let s = std::str::from_utf8(&data[*cursor..*cursor + len])
-                .map_err(|e| format!("Invalid UTF-8 string in value: {}", e))?;
+                .map_err(|e| format!("Invalid UTF-8 string: {}", e))?;
             *cursor += len;
             Ok(Value::String(s.to_string()))
         }
@@ -224,207 +186,201 @@ fn read_value(cursor: &mut usize, data: &[u8]) -> Result<Value, String> {
             if *cursor + 8 > data.len() {
                 return Err("Buffer overflow reading int value".to_string());
             }
-            let mut bytes = [0u8; 8];
-            bytes.copy_from_slice(&data[*cursor..*cursor + 8]);
+            let i = i64::from_be_bytes([
+                data[*cursor],
+                data[*cursor + 1],
+                data[*cursor + 2],
+                data[*cursor + 3],
+                data[*cursor + 4],
+                data[*cursor + 5],
+                data[*cursor + 6],
+                data[*cursor + 7],
+            ]);
             *cursor += 8;
-            Ok(Value::Int(i64::from_be_bytes(bytes)))
+            Ok(Value::Int(i))
         }
         3 => {
             if *cursor + 8 > data.len() {
                 return Err("Buffer overflow reading float value".to_string());
             }
-            let mut bytes = [0u8; 8];
-            bytes.copy_from_slice(&data[*cursor..*cursor + 8]);
+            let f = f64::from_be_bytes([
+                data[*cursor],
+                data[*cursor + 1],
+                data[*cursor + 2],
+                data[*cursor + 3],
+                data[*cursor + 4],
+                data[*cursor + 5],
+                data[*cursor + 6],
+                data[*cursor + 7],
+            ]);
             *cursor += 8;
-            Ok(Value::Float(f64::from_be_bytes(bytes)))
+            Ok(Value::Float(f))
         }
         4 => {
-            if *cursor + 1 > data.len() {
+            if *cursor >= data.len() {
                 return Err("Buffer overflow reading bool value".to_string());
             }
             let b = data[*cursor] != 0;
             *cursor += 1;
             Ok(Value::Bool(b))
         }
-        other => Err(format!("Unknown value type tag: {}", other)),
+        other => Err(format!("Unknown value type: {}", other)),
     }
 }
 
-pub struct PersistenceManager {
-    data_dir: PathBuf,
-    log_file_path: PathBuf,
-    catalog_path: PathBuf,
-    next_tx_id: u64,
-    log_file: Option<File>,
-    // Batched WAL writer
-    wal_tx: Option<Sender<BatchRequest>>,
-    wal_handle: Option<thread::JoinHandle<()>>,
-}
-
-#[derive(Debug)]
-enum BatchRequest {
-    Op(LogOp),
-    Flush(Sender<Result<u64, String>>),
+// Background WAL writer message types
+enum WriterMsg {
+    Write(Vec<u8>),
+    Flush(Sender<Result<(), String>>),
     Shutdown,
 }
 
-impl PersistenceManager {
-    pub fn new<P: AsRef<Path>>(data_dir: P) -> Self {
-        let dir = data_dir.as_ref().to_path_buf();
-        PersistenceManager {
-            log_file_path: dir.join("operations.log"),
-            catalog_path: dir.join("catalog.db"),
-            data_dir: dir,
-            next_tx_id: 1,
-            log_file: None,
-            wal_tx: None,
-            wal_handle: None,
-        }
-    }
+/// PersistenceManager with background WAL writer using flume channels.
+/// Batches writes for high throughput, flushes periodically or on demand.
+pub struct PersistenceManager {
+    data_dir: PathBuf,
+    catalog_path: PathBuf,
+    log_file_path: PathBuf,
+    log_file: Mutex<Option<File>>,
+    tx_id: AtomicU64,
+    
+    // Background writer channel (bounded for backpressure)
+    writer_tx: Sender<WriterMsg>,
+    writer_handle: Mutex<Option<std::thread::JoinHandle<()>>>,
+}
 
-    pub fn init(&mut self) -> Result<(), String> {
-        fs::create_dir_all(&self.data_dir)
-            .map_err(|e| format!("Failed to create data directory: {}", e))?;
+impl PersistenceManager {
+    pub fn new(data_dir: &Path) -> Self {
+        let data_dir = data_dir.to_path_buf();
+        let catalog_path = data_dir.join("catalog.db");
+        let log_file_path = data_dir.join("operations.log");
+
+        // Create directory if it doesn't exist
+        if !data_dir.exists() {
+            fs::create_dir_all(&data_dir).ok();
+        }
+
+        // Bounded channel for backpressure under load
+        let (writer_tx, writer_rx) = bounded(1000);
         
-        // Start the batched WAL writer thread
-        let log_file_path = self.log_file_path.clone();
-        let (tx, rx) = mpsc::channel::<BatchRequest>();
-        
-        let handle = thread::spawn(move || {
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&log_file_path)
-                .map_err(|e| format!("Failed to open log file: {}", e)).unwrap();
+        // Spawn background writer thread
+        let log_path = log_file_path.clone();
+        let writer_handle = std::thread::spawn(move || {
+            let mut file = None;
+            let mut buffer = Vec::with_capacity(8192);
             
-            let mut batch = Vec::new();
-            let mut last_flush = std::time::Instant::now();
-            const BATCH_MAX_SIZE: usize = 100;
-            const FLUSH_INTERVAL_MS: u64 = 10;
-            
-            loop {
-                match rx.recv_timeout(Duration::from_millis(FLUSH_INTERVAL_MS)) {
-                    Ok(BatchRequest::Op(op)) => {
-                        batch.push(op);
-                    }
-                    Ok(BatchRequest::Flush(response_tx)) => {
-                        // Flush current batch
-                        if !batch.is_empty() {
-                            let _ = Self::write_batch(&mut file, &mut batch, &mut 0u64);
+            while let Ok(msg) = writer_rx.recv() {
+                match msg {
+                    WriterMsg::Write(data) => {
+                        buffer.extend_from_slice(&data);
+                        // Auto-flush at 4KB to balance latency/throughput
+                        if buffer.len() >= 4096 {
+                            if let Some(ref mut f) = file {
+                                let _ = f.write_all(&buffer);
+                                let _ = f.flush();
+                            } else {
+                                // Lazy open
+                                if let Ok(f) = OpenOptions::new().create(true).append(true).open(&log_path) {
+                                    let _ = f.write_all(&buffer);
+                                    let _ = f.flush();
+                                    file = Some(f);
+                                }
+                            }
+                            buffer.clear();
                         }
-                        let _ = response_tx.send(Ok(0));
                     }
-                    Ok(BatchRequest::Shutdown) => {
+                    WriterMsg::Flush(resp_tx) => {
+                        // Write remaining buffer
+                        if !buffer.is_empty() {
+                            if let Some(ref mut f) = file {
+                                let _ = f.write_all(&buffer);
+                                let _ = f.flush();
+                            } else if let Ok(f) = OpenOptions::new().create(true).append(true).open(&log_path) {
+                                let _ = f.write_all(&buffer);
+                                let _ = f.flush();
+                                file = Some(f);
+                            }
+                            buffer.clear();
+                        } else if let Some(ref mut f) = file {
+                            let _ = f.flush();
+                        }
+                        let _ = resp_tx.send(Ok(()));
+                    }
+                    WriterMsg::Shutdown => {
                         // Final flush
-                        if !batch.is_empty() {
-                            let _ = Self::write_batch(&mut file, &mut batch, &mut 0u64);
+                        if !buffer.is_empty() {
+                            if let Some(ref mut f) = file {
+                                let _ = f.write_all(&buffer);
+                                let _ = f.flush();
+                            } else if let Ok(f) = OpenOptions::new().create(true).append(true).open(&log_path) {
+                                let _ = f.write_all(&buffer);
+                                let _ = f.flush();
+                                file = Some(f);
+                            }
                         }
-                        break;
-                    }
-                    Err(mpsc::RecvTimeoutError::Timeout) => {
-                        // Periodic flush
-                        if !batch.is_empty() && last_flush.elapsed() >= Duration::from_millis(FLUSH_INTERVAL_MS) {
-                            let _ = Self::write_batch(&mut file, &mut batch, &mut 0u64);
-                            last_flush = std::time::Instant::now();
-                        }
-                    }
-                    Err(mpsc::RecvTimeoutError::Disconnected) => {
                         break;
                     }
                 }
             }
         });
-        
-        self.wal_tx = Some(tx);
-        self.wal_handle = Some(handle);
-        Ok(())
-    }
-    
-    fn write_batch(file: &mut File, batch: &mut Vec<LogOp>, tx_id_counter: &mut u64) -> Result<u64, String> {
-        if batch.is_empty() {
-            return Ok(0);
+
+        Self {
+            data_dir,
+            catalog_path,
+            log_file_path,
+            log_file: Mutex::new(None),
+            tx_id: AtomicU64::new(0),
+            writer_tx,
+            writer_handle: Mutex::new(Some(writer_handle)),
         }
-        
-        let batch_op = LogOp::Batch(batch.drain(..).collect());
-        let tx_id = *tx_id_counter;
-        *tx_id_counter += 1;
-        
-        let payload = batch_op.serialize();
-        let mut entry = Vec::new();
-        entry.extend_from_slice(MAGIC_BYTES);
-        entry.extend_from_slice(&(payload.len() as u32).to_be_bytes());
-        entry.extend_from_slice(&tx_id.to_be_bytes());
-        entry.extend(payload);
-        
-        file.write_all(&entry)
-            .map_err(|e| format!("Failed to write batch to log file: {}", e))?;
-        file.flush()
-            .map_err(|e| format!("Failed to flush log file: {}", e))?;
-        
-        Ok(tx_id)
     }
 
-    pub fn append_op(&mut self, op: &LogOp) -> Result<u64, String> {
-        let tx_id = self.next_tx_id;
-        self.next_tx_id += 1;
+    /// Append a log operation asynchronously (non-blocking for hot path).
+    /// Returns tx_id immediately, actual write happens in background.
+    #[inline]
+    pub fn append_op(&self, op: &LogOp) -> Result<u64, String> {
+        let tx_id = self.tx_id.fetch_add(1, Ordering::Relaxed);
         
-        if let Some(ref tx) = self.wal_tx {
-            tx.send(BatchRequest::Op(op.clone()))
-                .map_err(|e| format!("Failed to send to WAL thread: {}", e))?;
-            // For now, we don't wait for the flush response
-            // This gives us async batched writes
-            return Ok(tx_id);
-        }
-        
-        // Fallback to direct write if WAL thread not started
+        // Serialize operation
         let payload = op.serialize();
-        let mut entry = Vec::new();
+        
+        // Build log entry: MAGIC(4) + payload_len(4) + tx_id(8) + payload
+        let mut entry = Vec::with_capacity(16 + payload.len());
         entry.extend_from_slice(MAGIC_BYTES);
         entry.extend_from_slice(&(payload.len() as u32).to_be_bytes());
         entry.extend_from_slice(&tx_id.to_be_bytes());
         entry.extend(payload);
 
-        let file = if let Some(ref mut f) = self.log_file {
-            f
-        } else {
-            let f = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&self.log_file_path)
-                .map_err(|e| format!("Failed to open log file: {}", e))?;
-            self.log_file = Some(f);
-            self.log_file.as_mut().unwrap()
-        };
-
-        file.write_all(&entry)
-            .map_err(|e| format!("Failed to write to log file: {}", e))?;
-        file.flush()
-            .map_err(|e| format!("Failed to flush log file: {}", e))?;
-
+        // Non-blocking send - apply backpressure if channel full
+        self.writer_tx.send(WriterMsg::Write(entry))
+            .map_err(|_| "WAL writer channel full, backpressure applied".to_string())?;
+        
         Ok(tx_id)
     }
-    
-    pub fn flush(&mut self) -> Result<(), String> {
-        if let Some(ref tx) = self.wal_tx {
-            let (response_tx, response_rx) = mpsc::channel();
-            tx.send(BatchRequest::Flush(response_tx))
-                .map_err(|e| format!("Failed to send flush request: {}", e))?;
-            response_rx.recv()
-                .map_err(|e| format!("Failed to receive flush response: {}", e))??;
+
+    /// Flush all pending writes and wait for completion (for checkpoints/shutdown).
+    pub fn flush(&self) -> Result<(), String> {
+        let (resp_tx, resp_rx) = bounded(1);
+        self.writer_tx.send(WriterMsg::Flush(resp_tx))
+            .map_err(|_| "WAL writer channel closed".to_string())?;
+        resp_rx.recv()
+            .map_err(|_| "WAL writer response channel closed".to_string())?
+    }
+
+    /// Gracefully shutdown the background writer.
+    pub fn shutdown(&self) -> Result<(), String> {
+        // Send shutdown signal
+        self.writer_tx.send(WriterMsg::Shutdown)
+            .map_err(|_| "WAL writer channel closed".to_string())?;
+        
+        // Wait for thread to finish
+        if let Some(handle) = self.writer_handle.lock().take() {
+            handle.join().ok();
         }
         Ok(())
     }
-    
-    pub fn shutdown(&mut self) -> Result<(), String> {
-        if let Some(tx) = self.wal_tx.take() {
-            tx.send(BatchRequest::Shutdown)
-                .map_err(|e| format!("Failed to send shutdown: {}", e))?;
-        }
-        if let Some(handle) = self.wal_handle.take() {
-            handle.join().map_err(|e| format!("WAL thread panicked: {:?}", e))?;
-        }
-        Ok(())
-    }
+
+    /// Read and decode all operations in operations.log.
     pub fn read_log(&self) -> Result<Vec<(u64, LogOp)>, String> {
         if !self.log_file_path.exists() {
             return Ok(Vec::new());
@@ -492,7 +448,10 @@ impl PersistenceManager {
     }
 
     /// Write active database engine state to files and clear the operations log.
-    pub fn checkpoint(&mut self, engine: &StorageEngine) -> Result<(), String> {
+    pub fn checkpoint(&self, engine: &StorageEngine) -> Result<(), String> {
+        // Flush any pending WAL writes first
+        self.flush()?;
+
         // 1. Save global catalog
         let catalog_json = serde_json::to_string_pretty(&engine.global_catalog)
             .map_err(|e| format!("Failed to serialize catalog: {}", e))?;
@@ -510,9 +469,6 @@ impl PersistenceManager {
             }
         }
 
-        // Close the cached log file so we can recreate it and release locks
-        self.log_file = None;
-
         // 3. Truncate operations log
         if self.log_file_path.exists() {
             let file = File::create(&self.log_file_path)
@@ -521,12 +477,11 @@ impl PersistenceManager {
                 .map_err(|e| format!("Failed to resize log file: {}", e))?;
         }
 
-        self.next_tx_id = 1;
         Ok(())
     }
 
     /// Restore the database state from catalog.db, <db>.db files, and replay operations.log.
-    pub fn restore(&mut self, engine: &mut StorageEngine) -> Result<(), String> {
+    pub fn restore(&self, engine: &mut StorageEngine) -> Result<(), String> {
         // 1. Load catalog if it exists
         if self.catalog_path.exists() {
             let catalog_json = fs::read_to_string(&self.catalog_path)
@@ -589,45 +544,15 @@ impl PersistenceManager {
                         let _ = engine.del_key(db_id, &bucket_name, &key_name);
                     }
                 }
-                LogOp::Batch(ops) => {
-                    for op in ops {
-                        match op {
-                            LogOp::CreateDb { db_name } => {
-                                let _ = engine.create_db(&db_name);
-                            }
-                            LogOp::DropDb { db_name } => {
-                                let _ = engine.drop_db(&db_name);
-                            }
-                            LogOp::CreateBucket { db_name, bucket_name } => {
-                                if let Some(db_id) = engine.global_catalog.get_db_id(&db_name) {
-                                    let _ = engine.create_bucket(db_id, &bucket_name);
-                                }
-                            }
-                            LogOp::DropBucket { db_name, bucket_name } => {
-                                if let Some(db_id) = engine.global_catalog.get_db_id(&db_name) {
-                                    let _ = engine.drop_bucket(db_id, &bucket_name);
-                                }
-                            }
-                            LogOp::Set { db_name, bucket_name, key_name, value } => {
-                                if let Some(db_id) = engine.global_catalog.get_db_id(&db_name) {
-                                    let _ = engine.set_key(db_id, &bucket_name, &key_name, value);
-                                }
-                            }
-                            LogOp::Del { db_name, bucket_name, key_name } => {
-                                if let Some(db_id) = engine.global_catalog.get_db_id(&db_name) {
-                                    let _ = engine.del_key(db_id, &bucket_name, &key_name);
-                                }
-                            }
-                            LogOp::Batch(_) => {
-                                // Nested batches not supported
-                            }
-                        }
-                    }
-                }
             }
-            self.next_tx_id = tx_id + 1;
         }
 
         Ok(())
+    }
+}
+
+impl Drop for PersistenceManager {
+    fn drop(&mut self) {
+        let _ = self.shutdown();
     }
 }

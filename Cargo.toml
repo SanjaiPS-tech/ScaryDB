@@ -11,6 +11,18 @@ chrono = { version = "0.4", features = ["serde"] }
 lazy_static = "1.5.0"
 parking_lot = "0.12"
 crossbeam-channel = "0.5"
+ahash = "0.8"
+smallvec = "1.10"
+smallstr = "0.3"
+crossbeam-epoch = "0.9"
+mio = "0.8"
+bytes = "1.5"
+dashmap = "6.1"
+memmap2 = "0.9"
+flume = "0.11"
+seahash = "4.1"
+xxhash-rust = "0.8"
+bytemuck = "1.14"
 
 [[bin]]
 name = "benchmark"

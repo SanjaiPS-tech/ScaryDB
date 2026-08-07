@@ -3,8 +3,9 @@ use crate::engine::StorageEngine;
 use crate::parser::Command;
 use crate::persistence::{LogOp, PersistenceManager};
 use crate::value::Value;
-use std::sync::{Arc, Mutex, RwLock};
-use std::sync::mpsc::{Receiver, Sender};
+use flume::{Receiver, Sender};
+use parking_lot::RwLock;
+use std::sync::Arc;
 use std::thread;
 
 pub struct Request {
@@ -173,22 +174,22 @@ impl DatabaseSystem {
             .cloned()
             .ok_or_else(|| "Internal error: Active database ID not found in catalog".to_string())?;
 
-        // 1. Parse all values first to ensure atomic batch validity
-        let mut parsed_ops = Vec::new();
+        // Parse all values first for atomic batch validity
+        let mut parsed_ops = Vec::with_capacity(ops.len());
         for op in &ops {
             let val = Value::parse(&op.value_str, op.explicit_type.as_deref())
                 .map_err(|e| format!("Failed to parse value for key '{}': {}", op.key, e))?;
             parsed_ops.push((&op.key, val));
         }
 
-        // 2. Perform write operations & WAL logging
+        // Perform write operations & WAL logging
         let mut count = 0;
         for (key, val) in parsed_ops {
             self.engine.set_key(db_id, &bucket, key, val.clone())?;
             self.persistence.append_op(&LogOp::Set {
                 db_name: db_name.clone(),
                 bucket_name: bucket.clone(),
-                key_name: key.clone(),
+                key_name: key.to_string(),
                 value: val,
             })?;
             self.check_checkpoint();
@@ -223,7 +224,7 @@ impl DatabaseSystem {
 
     fn execute_get(&self, bucket: String, keys: Vec<String>, current_db: Option<u32>) -> Result<String, String> {
         let db_id = current_db.ok_or_else(|| "No database selected. Run 'USE <db_name>;' first.".to_string())?;
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(keys.len());
         for key in &keys {
             match self.engine.get_key(db_id, &bucket, key)? {
                 Some(val) => results.push(val.to_string()),
@@ -235,7 +236,7 @@ impl DatabaseSystem {
 
     fn execute_exists(&self, bucket: String, keys: Vec<String>, current_db: Option<u32>) -> Result<String, String> {
         let db_id = current_db.ok_or_else(|| "No database selected. Run 'USE <db_name>;' first.".to_string())?;
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(keys.len());
         for key in &keys {
             let exists = self.engine.exists_key(db_id, &bucket, key)?;
             results.push(exists.to_string());
@@ -334,12 +335,12 @@ pub struct WorkerPool {
 impl WorkerPool {
     pub fn new(
         num_workers: usize,
-        request_rx: Arc<Mutex<Receiver<Request>>>,
+        request_rx: Arc<Receiver<Request>>,
         system: Arc<RwLock<DatabaseSystem>>,
     ) -> Self {
-        let mut workers = Vec::new();
+        let mut workers = Vec::with_capacity(num_workers);
         for id in 0..num_workers {
-            let rx = Arc::clone(&request_rx);
+            let rx = request_rx.clone();
             let sys = Arc::clone(&system);
             
             let handle = thread::spawn(move || {
@@ -347,28 +348,24 @@ impl WorkerPool {
                     println!("Worker thread {} started and waiting for requests...", id);
                 }
                 loop {
-                    // 1. Pull next request from Request Queue
-                    let request = {
-                        let rx_lock = rx.lock().expect("mutex poisoned");
-                        match rx_lock.recv() {
-                            Ok(req) => req,
-                            Err(_) => {
-                                // Channel closed, shutdown worker
-                                if !crate::QUIET.load(std::sync::atomic::Ordering::Relaxed) {
-                                    println!("Worker thread {} channel closed. Shutting down.", id);
-                                }
-                                break;
+                    // Pull next request from Request Queue
+                    let request = match rx.recv() {
+                        Ok(req) => req,
+                        Err(_) => {
+                            if !crate::QUIET.load(std::sync::atomic::Ordering::Relaxed) {
+                                println!("Worker thread {} channel closed. Shutting down.", id);
                             }
+                            break;
                         }
                     };
 
-                    // 2. Execute command
+                    // Execute command
                     let response = {
-                        let mut sys_lock = sys.write().expect("rwlock poisoned");
+                        let mut sys_lock = sys.write();
                         sys_lock.execute_command(request.command, request.db_context)
                     };
 
-                    // 3. Send response back
+                    // Send response back
                     let _ = request.response_tx.send(response);
                 }
             });
@@ -380,7 +377,6 @@ impl WorkerPool {
 
     #[allow(dead_code)]
     pub fn shutdown(self) {
-        // Since the pool drops, the workers will exit when the channel is dropped.
         for handle in self._workers {
             let _ = handle.join();
         }
