@@ -266,7 +266,7 @@ impl PersistenceManager {
         // Spawn background writer thread
         let log_path = log_file_path.clone();
         let writer_handle = std::thread::spawn(move || {
-            let mut file = None;
+            let mut file: Option<File> = None;
             let mut buffer = Vec::with_capacity(8192);
             
             while let Ok(msg) = writer_rx.recv() {
@@ -280,7 +280,7 @@ impl PersistenceManager {
                                 let _ = f.flush();
                             } else {
                                 // Lazy open
-                                if let Ok(f) = OpenOptions::new().create(true).append(true).open(&log_path) {
+                                if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&log_path) {
                                     let _ = f.write_all(&buffer);
                                     let _ = f.flush();
                                     file = Some(f);
@@ -295,7 +295,7 @@ impl PersistenceManager {
                             if let Some(ref mut f) = file {
                                 let _ = f.write_all(&buffer);
                                 let _ = f.flush();
-                            } else if let Ok(f) = OpenOptions::new().create(true).append(true).open(&log_path) {
+                            } else if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&log_path) {
                                 let _ = f.write_all(&buffer);
                                 let _ = f.flush();
                                 file = Some(f);
@@ -312,7 +312,7 @@ impl PersistenceManager {
                             if let Some(ref mut f) = file {
                                 let _ = f.write_all(&buffer);
                                 let _ = f.flush();
-                            } else if let Ok(f) = OpenOptions::new().create(true).append(true).open(&log_path) {
+                            } else if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&log_path) {
                                 let _ = f.write_all(&buffer);
                                 let _ = f.flush();
                                 file = Some(f);
@@ -365,6 +365,12 @@ impl PersistenceManager {
             .map_err(|_| "WAL writer channel closed".to_string())?;
         resp_rx.recv()
             .map_err(|_| "WAL writer response channel closed".to_string())?
+    }
+
+    /// Initialize the persistence manager (no-op, setup done in new()).
+    pub fn init(&self) -> Result<(), String> {
+        // Directory creation and writer thread spawning already done in new()
+        Ok(())
     }
 
     /// Gracefully shutdown the background writer.

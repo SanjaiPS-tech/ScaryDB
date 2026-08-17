@@ -3,6 +3,9 @@ name = "scarydb"
 version = "0.1.0"
 edition = "2021"
 default-run = "scarydb"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/SanjaiPS-tech/ScaryDB"
+description = "High-performance, in-memory, actor-based hierarchical database"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -23,6 +26,15 @@ flume = "0.11"
 seahash = "4.1"
 xxhash-rust = "0.8"
 bytemuck = "1.14"
+# Observability dependencies
+tracing = { version = "0.1", features = ["std"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
+metrics = "0.21"
+metrics-exporter-prometheus = "0.13"
+# HTTP for health checks
+axum = "0.7"
+tokio = { version = "1.0", features = ["rt-multi-thread", "net", "signal", "sync", "macros"] }
+tower-http = { version = "0.5", features = ["trace"] }
 
 [[bin]]
 name = "benchmark"

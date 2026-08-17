@@ -5,6 +5,7 @@ use crate::persistence::{LogOp, PersistenceManager};
 use crate::value::Value;
 use flume::{Receiver, Sender};
 use parking_lot::RwLock;
+use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 
@@ -29,7 +30,7 @@ pub struct DatabaseSystem {
 
 impl DatabaseSystem {
     pub fn new(config: Config, config_path: &str) -> Self {
-        let persistence = PersistenceManager::new(&config.storage.data_dir);
+        let persistence = PersistenceManager::new(Path::new(&config.storage.data_dir));
         DatabaseSystem {
             engine: StorageEngine::new(),
             persistence,

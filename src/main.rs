@@ -12,13 +12,14 @@ use persistence::PersistenceManager;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::io::{self, BufRead, BufReader, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use flume::{self, Sender};
 use parking_lot::{Mutex, RwLock};
 use std::thread;
+use tokio;
 use worker::{DatabaseSystem, Request, Response, WorkerPool};
 
 pub static QUIET: AtomicBool = AtomicBool::new(false);
@@ -31,6 +32,7 @@ struct WireResponse {
 }
 
 const CONFIG_PATH: &str = "config.json";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -41,6 +43,10 @@ fn main() {
     };
 
     match mode.as_str() {
+        "version" | "--version" | "-v" => {
+            println!("ScaryDB v{}", VERSION);
+            return;
+        }
         "standalone" | "--standalone" => run_standalone(),
         "server" | "--server" => run_server(),
         "client" | "--client" => run_client(false),
@@ -52,7 +58,7 @@ fn main() {
             run_log_reader(&args[2]);
         }
         _ => {
-            println!("Unknown mode: {}. Use 'standalone', 'server', 'client', or 'log-read'.", mode);
+            println!("Unknown mode: {}. Use 'standalone', 'server', 'client', 'log-read', or 'version'.", mode);
         }
     }
 }

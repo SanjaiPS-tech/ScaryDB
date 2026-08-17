@@ -1,0 +1,33 @@
+[Unit]
+Description=ScaryDB High-Performance In-Memory Database
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=scarydb
+Group=scarydb
+WorkingDirectory=/opt/scarydb
+ExecStart=/opt/scarydb/scarydb server
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=scarydb
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/scarydb/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target
