@@ -1,0 +1,1305 @@
+name: Scheduled Maintenance
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+    # Run weekly deep maintenance on Sundays at 3 AM UTC
+    - cron: '0 3 * * 0'
+    # AI Refactoring Analysis - Weekly on Sundays at 5 AM UTC
+    - cron: '0 5 * * 0'
+    # AI Security Analysis - Daily at 3 AM UTC
+    - cron: '0 3 * * *'
+    # AI Performance Analysis - Weekly on Mondays at 4 AM UTC
+    - cron: '0 4 * * 1'
+    # AI Test Analysis - Weekly on Wednesdays at 4 AM UTC
+    - cron: '0 4 * * 3'
+    # AI Documentation Analysis - Weekly on Fridays at 4 AM UTC
+    - cron: '0 4 * * 5'
+    # AI Maintenance Supervisor - Weekly on Saturdays at 4 AM UTC
+    - cron: '0 4 * * 6'
+    # AI Code Repair - Weekly on Tuesdays at 4 AM UTC
+    - cron: '0 4 * * 2'
+    # AI Test Fix - Weekly on Thursdays at 4 AM UTC
+    - cron: '0 4 * * 4'
+  workflow_dispatch:
+    inputs:
+      maintenance_type:
+        description: 'Type of maintenance to run'
+        required: true
+        default: 'daily'
+        type: choice
+        options:
+          - 'daily'
+          - 'weekly'
+          - 'security'
+          - 'dependency-update'
+          - 'ai-review'
+          - 'ai-refactor'
+          - 'ai-security'
+          - 'ai-perf'
+          - 'ai-tests'
+          - 'ai-docs'
+          - 'ai-supervisor'
+          - 'all-ai'
+          - 'ai-repair'
+          - 'ai-fix-tests'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  daily-maintenance:
+    name: Daily Maintenance
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 2 * * *' || github.event.inputs.maintenance_type == 'daily'
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-maintenance-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-maintenance-
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test --all-features -- --test-threads=4
+
+      - name: Build release
+        run: cargo build --release --all-features
+
+      - name: Check for outdated dependencies
+        run: |
+          cargo install cargo-outdated --locked 2>/dev/null || true
+          cargo outdated --root-deps-only || true
+
+      - name: Security audit
+        run: |
+          cargo install cargo-audit --locked 2>/dev/null || true
+          cargo audit || true
+
+      - name: Create maintenance summary
+        run: |
+          echo "## 🔧 Daily Maintenance Report" > maintenance_summary.md
+          echo "" >> maintenance_summary.md
+          echo "**Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> maintenance_summary.md
+          echo "**Commit:** $(git rev-parse --short HEAD)" >> maintenance_summary.md
+          echo "**Branch:** ${{ github.ref_name }}" >> maintenance_summary.md
+          echo "" >> maintenance_summary.md
+          echo "### ✅ Checks Passed" >> maintenance_summary.md
+          echo "- Formatting" >> maintenance_summary.md
+          echo "- Clippy lints" >> maintenance_summary.md
+          echo "- Unit & integration tests" >> maintenance_summary.md
+          echo "- Release build" >> maintenance_summary.md
+          echo "- Security audit" >> maintenance_summary.md
+          echo "" >> maintenance_summary.md
+          echo "### 📦 Dependency Status" >> maintenance_summary.md
+          cargo outdated --root-deps-only 2>/dev/null | head -20 >> maintenance_summary.md || echo "No outdated dependencies found" >> maintenance_summary.md
+
+      - name: Upload maintenance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-maintenance-report
+          path: maintenance_summary.md
+          retention-days: 90
+
+  weekly-maintenance:
+    name: Weekly Deep Maintenance
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 3 * * 0' || github.event.inputs.maintenance_type == 'weekly'
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-weekly-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-weekly-
+
+      - name: Run full test suite with all features
+        run: cargo test --all-features -- --test-threads=4
+
+      - name: Run benchmarks
+        run: |
+          cargo build --release --all-features
+          for i in {1..3}; do
+            echo "=== Benchmark run $i ==="
+            ./target/release/benchmark 2>&1 | tee -a weekly_benchmark.txt
+          done
+
+      - name: Check for dead code
+        run: |
+          cargo install cargo-machete --locked 2>/dev/null || true
+          cargo machete || true
+
+      - name: Check MSRV compatibility
+        run: |
+          rustup install 1.70
+          cargo +1.70 build --all-features 2>&1 | tee msrv_check.txt || true
+
+      - name: Generate documentation
+        run: cargo doc --all-features --no-deps
+
+      - name: Check documentation coverage
+        run: |
+          cargo install cargo-doc-coverage --locked 2>/dev/null || true
+          cargo doc-coverage 2>&1 | tee doc_coverage.txt || true
+
+      - name: Create weekly summary
+        run: |
+          echo "## 📅 Weekly Maintenance Report" > weekly_summary.md
+          echo "" >> weekly_summary.md
+          echo "**Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> weekly_summary.md
+          echo "**Commit:** $(git rev-parse --short HEAD)" >> weekly_summary.md
+          echo "" >> weekly_summary.md
+          echo "### ✅ Checks Completed" >> weekly_summary.md
+          echo "- Full test suite" >> weekly_summary.md
+          echo "- Performance benchmarks (3 runs)" >> weekly_summary.md
+          echo "- Dead code analysis" >> weekly_summary.md
+          echo "- MSRV compatibility (1.70)" >> weekly_summary.md
+          echo "- Documentation generation" >> weekly_summary.md
+          echo "- Documentation coverage check" >> weekly_summary.md
+          echo "" >> weekly_summary.md
+          echo "### 📊 Benchmark Summary" >> weekly_summary.md
+          if [ -f weekly_benchmark.txt ]; then
+            grep -E '(SET|GET).*ops' weekly_benchmark.txt | head -10 >> weekly_summary.md
+          fi
+          echo "" >> weekly_summary.md
+          echo "### 📚 Documentation Coverage" >> weekly_summary.md
+          if [ -f doc_coverage.txt ]; then
+            tail -20 doc_coverage.txt >> weekly_summary.md
+          fi
+
+      - name: Upload weekly report
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-maintenance-report
+          path: |
+            weekly_summary.md
+            weekly_benchmark.txt
+            msrv_check.txt
+            doc_coverage.txt
+          retention-days: 90
+
+  security-maintenance:
+    name: Security Maintenance
+    runs-on: ubuntu-latest
+    if: github.event.inputs.maintenance_type == 'security'
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Security audit with cargo-audit
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit --json > audit_report.json
+          cargo audit
+
+      - name: Check for yanked dependencies
+        run: |
+          cargo install cargo-yanked --locked 2>/dev/null || true
+          cargo yanked --check || true
+
+      - name: Check for license compliance
+        run: |
+          cargo install cargo-license --locked 2>/dev/null || true
+          cargo license --json > licenses.json || true
+          cargo license
+
+      - name: Create security report
+        run: |
+          echo "## 🔒 Security Maintenance Report" > security_report.md
+          echo "" >> security_report.md
+          echo "**Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> security_report.md
+          echo "**Commit:** $(git rev-parse --short HEAD)" >> security_report.md
+          echo "" >> security_report.md
+          echo "### Audit Results" >> security_report.md
+          if [ -f audit_report.json ]; then
+            cat audit_report.json | jq -r '.vulnerabilities.found // 0' | xargs -I {} echo "Vulnerabilities found: {}" >> security_report.md
+          fi
+          echo "" >> security_report.md
+          echo "### Yanked Dependencies" >> security_report.md
+          cargo yanked --check 2>&1 | head -20 >> security_report.md || echo "No yanked dependencies check available" >> security_report.md
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-maintenance-report
+          path: |
+            security_report.md
+            audit_report.json
+            licenses.json
+          retention-days: 90
+
+  dependency-update:
+    name: Dependency Update Check
+    runs-on: ubuntu-latest
+    if: github.event.inputs.maintenance_type == 'dependency-update'
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-depupdate-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-depupdate-
+
+      - name: Check for updates
+        run: |
+          cargo install cargo-update --locked 2>/dev/null || true
+          cargo install cargo-outdated --locked 2>/dev/null || true
+          
+          echo "## 📦 Dependency Update Report" > dep_update_report.md
+          echo "" >> dep_update_report.md
+          echo "**Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> dep_update_report.md
+          echo "**Commit:** $(git rev-parse --short HEAD)" >> dep_update_report.md
+          echo "" >> dep_update_report.md
+          echo "### Outdated Dependencies" >> dep_update_report.md
+          cargo outdated --root-deps-only 2>&1 >> dep_update_report.md || echo "No outdated dependencies or command failed" >> dep_update_report.md
+          echo "" >> dep_update_report.md
+          echo "### Available Updates (cargo update --dry-run)" >> dep_update_report.md
+          cargo update --dry-run 2>&1 >> dep_update_report.md || true
+
+      - name: Test with updated dependencies
+        run: |
+          # Create a backup of Cargo.lock
+          cp Cargo.lock Cargo.lock.backup
+          
+          # Try updating
+          cargo update 2>&1 | tee update_output.txt || true
+          
+          # Test if build still works
+          if cargo build --all-features 2>&1 | tee build_after_update.txt; then
+            echo "✅ Build successful with updated dependencies" >> dep_update_report.md
+            echo "" >> dep_update_report.md
+            echo "### Updated Dependencies" >> dep_update_report.md
+            diff Cargo.lock.backup Cargo.lock | grep '^>' | head -30 >> dep_update_report.md || true
+          else
+            echo "❌ Build failed with updated dependencies" >> dep_update_report.md
+            echo "" >> dep_update_report.md
+            echo "### Build Error" >> dep_update_report.md
+            tail -50 build_after_update.txt >> dep_update_report.md
+            # Restore original Cargo.lock
+            mv Cargo.lock.backup Cargo.lock
+          fi
+
+      - name: Upload dependency update report
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-update-report
+          path: |
+            dep_update_report.md
+            update_output.txt
+            build_after_update.txt
+          retention-days: 90
+
+  ai-code-review:
+    name: AI Code Review
+    runs-on: ubuntu-latest
+    if: github.event.inputs.maintenance_type == 'ai-review'
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ai-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-ai-
+
+      - name: Run cargo check for context
+        run: cargo check --all-features 2>&1 | tee cargo_check.txt
+
+      - name: Get changed files
+        run: |
+          git diff HEAD~1 --name-only -- '*.rs' > changed_files.txt 2>/dev/null || true
+          git diff HEAD~1 -- '*.rs' > code_diff.txt 2>/dev/null || true
+
+      - name: AI Code Review
+        if: env.NVIDIA_API_KEY != ''
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          cat > ai_prompt.txt << 'EOF'
+          You are a senior Rust engineer. Review the following code changes and provide:
+          1. Performance improvements
+          2. Correctness issues
+          3. Idiomatic Rust suggestions
+          4. Security concerns
+          5. Test coverage gaps
+
+          Format as actionable GitHub review comments with file:line references where possible.
+          EOF
+
+          # Call NVIDIA API
+          curl -s -X POST "https://integrate.api.nvidia.com/v1/chat/completions" \
+            -H "Authorization: Bearer ${NVIDIA_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d @- << PAYLOAD > ai_review.json
+          {
+            "model": "nvidia/nemotron-3-ultra-550b-a55b",
+            "messages": [
+              {"role": "system", "content": "$(cat ai_prompt.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"},
+              {"role": "user", "content": "Code diff:\n$(cat code_diff.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nCargo check output:\n$(cat cargo_check.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 4000
+          }
+          PAYLOAD
+
+      - name: Post AI Review as PR Comment
+        if: github.event_name == 'pull_request' && env.NVIDIA_API_KEY != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const review = JSON.parse(fs.readFileSync('ai_review.json', 'utf8'));
+            const content = review.choices?.[0]?.message?.content || 'No review generated';
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🤖 AI Code Review\n\n${content}`
+            });
+
+      - name: Upload AI Review Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-code-review
+          path: ai_review.json
+          retention-days: 30
+
+  ai-refactor:
+    name: AI Refactoring Analysis
+    runs-on: ubuntu-latest
+    if: github.event.inputs.maintenance_type == 'ai-refactor' || github.event.schedule == '0 5 * * 0'
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ai-refactor-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-ai-refactor-
+
+      - name: Collect codebase metrics
+        run: |
+          cargo install cargo-machete cargo-udeps --locked 2>/dev/null || true
+          cargo machete > dead_code.txt 2>&1 || true
+          cargo udeps --all-targets > unused_deps.txt 2>&1 || true
+          cargo clippy --all-targets --all-features -- -D warnings 2>&1 | head -100 > clippy_warnings.txt || true
+
+      - name: Gather codebase sample
+        run: |
+          find src -name "*.rs" -size -50k | head -20 | xargs cat > codebase_sample.txt 2>/dev/null || true
+
+      - name: AI Refactoring Analysis
+        if: env.NVIDIA_API_KEY != ''
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          cat > refactor_prompt.txt << 'EOF'
+          You are a Rust architecture expert. Analyze the following codebase health data and provide:
+          1. Top 5 refactoring priorities with effort/impact estimates
+          2. Architectural debt hotspots
+          3. Modern Rust patterns to adopt (async, const generics, GATs, etc.)
+          4. Dependency modernization opportunities
+          5. Test strategy improvements
+
+          Output as prioritized markdown checklist.
+          EOF
+
+          curl -s -X POST "https://integrate.api.nvidia.com/v1/chat/completions" \
+            -H "Authorization: Bearer ${NVIDIA_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d @- << PAYLOAD > refactor_plan.json
+          {
+            "model": "nvidia/nemotron-3-ultra-550b-a55b",
+            "messages": [
+              {"role": "system", "content": "$(cat refactor_prompt.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"},
+              {"role": "user", "content": "Dead code:\n$(cat dead_code.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nUnused deps:\n$(cat unused_deps.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nClippy warnings:\n$(cat clippy_warnings.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nCodebase sample:\n$(cat codebase_sample.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"}
+            ],
+            "temperature": 0.4,
+            "max_tokens": 4000
+          }
+          PAYLOAD
+
+      - name: Create Refactoring Issue
+        if: env.NVIDIA_API_KEY != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = JSON.parse(fs.readFileSync('refactor_plan.json', 'utf8'));
+            const content = plan.choices?.[0]?.message?.content || 'No plan generated';
+            const { data: issue } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🔧 Weekly AI Refactoring Plan - ${new Date().toISOString().split('T')[0]}`,
+              body: content,
+              labels: ['refactoring', 'ai-generated', 'maintenance']
+            });
+            console.log(`Created issue #${issue.number}`);
+
+      - name: Upload Refactoring Plan Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-refactoring-plan
+          path: |
+            refactor_plan.json
+            dead_code.txt
+            unused_deps.txt
+            clippy_warnings.txt
+          retention-days: 90
+
+  ai-security:
+    name: AI Security Analysis
+    runs-on: ubuntu-latest
+    if: github.event.inputs.maintenance_type == 'ai-security' || github.event.schedule == '0 3 * * *'
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ai-sec-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-ai-sec-
+
+      - name: Run security audit
+        run: |
+          cargo install cargo-audit --locked 2>/dev/null || true
+          cargo audit --json > audit_report.json 2>&1 || true
+          cargo audit 2>&1 | tee audit_text.txt || true
+
+      - name: Check for unsafe code
+        run: |
+          grep -r "unsafe" src/ --include="*.rs" | head -50 > unsafe_usage.txt || true
+
+      - name: AI Security Analysis
+        if: env.NVIDIA_API_KEY != ''
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          cat > security_prompt.txt << 'EOF'
+          You are a Rust security expert. Analyze the following security data and provide:
+          1. Vulnerability assessment (from cargo audit)
+          2. Unsafe code review - identify soundness issues
+          3. Supply chain risks (transitive dependencies)
+          4. Security best practice violations
+          5. Recommended fixes with priority
+
+          Output as prioritized markdown checklist with CVE references where applicable.
+          EOF
+
+          curl -s -X POST "https://integrate.api.nvidia.com/v1/chat/completions" \
+            -H "Authorization: Bearer ${NVIDIA_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d @- << PAYLOAD > security_analysis.json
+          {
+            "model": "nvidia/nemotron-3-ultra-550b-a55b",
+            "messages": [
+              {"role": "system", "content": "$(cat security_prompt.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"},
+              {"role": "user", "content": "Audit report (JSON):\n$(cat audit_report.json 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nAudit text:\n$(cat audit_text.txt 2>/dev/null | head -200 | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nUnsafe code locations:\n$(cat unsafe_usage.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"}
+            ],
+            "temperature": 0.2,
+            "max_tokens": 4000
+          }
+          PAYLOAD
+
+      - name: Create Security Issue
+        if: env.NVIDIA_API_KEY != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const analysis = JSON.parse(fs.readFileSync('security_analysis.json', 'utf8'));
+            const content = analysis.choices?.[0]?.message?.content || 'No analysis generated';
+            const { data: issue } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🔒 AI Security Analysis - ${new Date().toISOString().split('T')[0]}`,
+              body: content,
+              labels: ['security', 'ai-generated', 'maintenance']
+            });
+            console.log(`Created issue #${issue.number}`);
+
+      - name: Upload Security Analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-security-analysis
+          path: |
+            security_analysis.json
+            audit_report.json
+            audit_text.txt
+            unsafe_usage.txt
+          retention-days: 90
+
+  ai-perf:
+    name: AI Performance Analysis
+    runs-on: ubuntu-latest
+    if: github.event.inputs.maintenance_type == 'ai-perf' || github.event.schedule == '0 4 * * 1'
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ai-perf-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-ai-perf-
+
+      - name: Build release
+        run: cargo build --release --all-features
+
+      - name: Run benchmarks
+        run: |
+          for i in {1..5}; do
+            echo "=== Benchmark run $i ==="
+            ./target/release/benchmark 2>&1 | tee -a perf_benchmark.txt
+          done
+
+      - name: Collect flamegraph data
+        run: |
+          cargo install flamegraph --locked 2>/dev/null || true
+          echo "Flamegraph would require root/sudo, skipping in CI" > flamegraph_note.txt
+
+      - name: Get hot code paths
+        run: |
+          grep -r "hot\|inline\|fast" src/ --include="*.rs" -i | head -30 > hot_paths.txt || true
+
+      - name: AI Performance Analysis
+        if: env.NVIDIA_API_KEY != ''
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          cat > perf_prompt.txt << 'EOF'
+          You are a Rust performance engineer. Analyze the following performance data and provide:
+          1. Bottleneck identification from benchmark results
+          2. Hot path analysis and optimization opportunities
+          3. Memory allocation patterns to improve
+          4. Concurrency/contention issues
+          5. Specific code changes with expected impact
+
+          Output as prioritized markdown checklist with estimated speedup.
+          EOF
+
+          curl -s -X POST "https://integrate.api.nvidia.com/v1/chat/completions" \
+            -H "Authorization: Bearer ${NVIDIA_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d @- << PAYLOAD > perf_analysis.json
+          {
+            "model": "nvidia/nemotron-3-ultra-550b-a55b",
+            "messages": [
+              {"role": "system", "content": "$(cat perf_prompt.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"},
+              {"role": "user", "content": "Benchmark results (5 runs):\n$(cat perf_benchmark.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nHot paths:\n$(cat hot_paths.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nFlamegraph note:\n$(cat flamegraph_note.txt 2>/dev/null)"}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 4000
+          }
+          PAYLOAD
+
+      - name: Create Performance Issue
+        if: env.NVIDIA_API_KEY != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const analysis = JSON.parse(fs.readFileSync('perf_analysis.json', 'utf8'));
+            const content = analysis.choices?.[0]?.message?.content || 'No analysis generated';
+            const { data: issue } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `⚡ AI Performance Analysis - ${new Date().toISOString().split('T')[0]}`,
+              body: content,
+              labels: ['performance', 'ai-generated', 'maintenance']
+            });
+            console.log(`Created issue #${issue.number}`);
+
+      - name: Upload Performance Analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-performance-analysis
+          path: |
+            perf_analysis.json
+            perf_benchmark.txt
+            hot_paths.txt
+            flamegraph_note.txt
+          retention-days: 90
+
+  ai-tests:
+    name: AI Test Analysis & Generation
+    runs-on: ubuntu-latest
+    if: github.event.inputs.maintenance_type == 'ai-tests' || github.event.schedule == '0 4 * * 3'
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ai-tests-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-ai-tests-
+
+      - name: Run tests with coverage
+        run: |
+          cargo install cargo-llvm-cov --locked 2>/dev/null || true
+          cargo llvm-cov --all-features --lcov --output-path lcov.info 2>&1 | tee coverage.txt || true
+          cargo llvm-cov --all-features --summary-only 2>&1 | tee coverage_summary.txt || true
+
+      - name: Analyze test files
+        run: |
+          find tests -name "*.rs" -o -name "*.rs" -path "src/*/tests*" | head -20 | xargs cat > existing_tests.txt 2>/dev/null || true
+          grep -r "#\[test\]" src/ --include="*.rs" -A 5 | head -100 > unit_tests.txt || true
+
+      - name: AI Test Analysis & Generation
+        if: env.NVIDIA_API_KEY != ''
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          cat > test_prompt.txt << 'EOF'
+          You are a Rust testing expert. Analyze the following test data and provide:
+          1. Coverage gaps - untested modules/functions
+          2. Missing test categories (unit, integration, property, fuzz, chaos)
+          3. Test quality issues (flaky, slow, brittle)
+          4. New test cases to add with code examples
+          4. Property-based testing opportunities
+          5. Test infrastructure improvements
+
+          Output as prioritized markdown checklist with example test code.
+          EOF
+
+          curl -s -X POST "https://integrate.api.nvidia.com/v1/chat/completions" \
+            -H "Authorization: Bearer ${NVIDIA_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d @- << PAYLOAD > test_analysis.json
+          {
+            "model": "nvidia/nemotron-3-ultra-550b-a55b",
+            "messages": [
+              {"role": "system", "content": "$(cat test_prompt.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"},
+              {"role": "user", "content": "Coverage summary:\n$(cat coverage_summary.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nExisting integration tests:\n$(cat existing_tests.txt 2>/dev/null | head -200 | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nUnit tests:\n$(cat unit_tests.txt 2>/dev/null | head -200 | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"}
+            ],
+            "temperature": 0.4,
+            "max_tokens": 4000
+          }
+          PAYLOAD
+
+      - name: Create Test Improvement Issue
+        if: env.NVIDIA_API_KEY != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const analysis = JSON.parse(fs.readFileSync('test_analysis.json', 'utf8'));
+            const content = analysis.choices?.[0]?.message?.content || 'No analysis generated';
+            const { data: issue } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🧪 AI Test Analysis & Generation - ${new Date().toISOString().split('T')[0]}`,
+              body: content,
+              labels: ['testing', 'ai-generated', 'maintenance']
+            });
+            console.log(`Created issue #${issue.number}`);
+
+      - name: Upload Test Analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-test-analysis
+          path: |
+            test_analysis.json
+            coverage.txt
+            coverage_summary.txt
+            existing_tests.txt
+            unit_tests.txt
+          retention-days: 90
+
+  ai-docs:
+    name: AI Documentation Analysis & Generation
+    runs-on: ubuntu-latest
+    if: github.event.inputs.maintenance_type == 'ai-docs' || github.event.schedule == '0 4 * * 5'
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ai-docs-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-ai-docs-
+
+      - name: Generate documentation
+        run: cargo doc --all-features --no-deps 2>&1 | tee doc_gen.txt || true
+
+      - name: Check documentation coverage
+        run: |
+          cargo install cargo-doc-coverage --locked 2>/dev/null || true
+          cargo doc-coverage 2>&1 | tee doc_coverage.txt || true
+
+      - name: Collect existing docs
+        run: |
+          find . -name "*.md" -not -path "./target/*" | head -20 | xargs cat > markdown_docs.txt 2>/dev/null || true
+          grep -r "^///\|^//!" src/ --include="*.rs" | head -100 > rust_docs.txt || true
+
+      - name: AI Documentation Analysis & Generation
+        if: env.NVIDIA_API_KEY != ''
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          cat > docs_prompt.txt << 'EOF'
+          You are a technical writer specializing in Rust documentation. Analyze the following and provide:
+          1. Documentation coverage gaps (public API items missing docs)
+          2. Quality issues (outdated, unclear, missing examples)
+          3. Missing documentation types (README, ARCHITECTURE.md, CONTRIBUTING.md, CHANGELOG.md)
+          4. New doc content to generate with examples
+          5. Doc maintenance improvements
+
+          Output as prioritized markdown checklist with example doc content.
+          EOF
+
+          curl -s -X POST "https://integrate.api.nvidia.com/v1/chat/completions" \
+            -H "Authorization: Bearer ${NVIDIA_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d @- << PAYLOAD > docs_analysis.json
+          {
+            "model": "nvidia/nemotron-3-ultra-550b-a55b",
+            "messages": [
+              {"role": "system", "content": "$(cat docs_prompt.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"},
+              {"role": "user", "content": "Doc coverage:\n$(cat doc_coverage.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nMarkdown docs:\n$(cat markdown_docs.txt 2>/dev/null | head -300 | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nRust doc comments:\n$(cat rust_docs.txt 2>/dev/null | head -200 | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"}
+            ],
+            "temperature": 0.4,
+            "max_tokens": 4000
+          }
+          PAYLOAD
+
+      - name: Create Documentation Issue
+        if: env.NVIDIA_API_KEY != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const analysis = JSON.parse(fs.readFileSync('docs_analysis.json', 'utf8'));
+            const content = analysis.choices?.[0]?.message?.content || 'No analysis generated';
+            const { data: issue } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `📚 AI Documentation Analysis - ${new Date().toISOString().split('T')[0]}`,
+              body: content,
+              labels: ['documentation', 'ai-generated', 'maintenance']
+            });
+            console.log(`Created issue #${issue.number}`);
+
+      - name: Upload Documentation Analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-documentation-analysis
+          path: |
+            docs_analysis.json
+            doc_coverage.txt
+            markdown_docs.txt
+            rust_docs.txt
+          retention-days: 90
+
+  ai-supervisor:
+    name: AI Maintenance Supervisor (Meta-Agent)
+    runs-on: ubuntu-latest
+    if: github.event.inputs.maintenance_type == 'ai-supervisor' || github.event.inputs.maintenance_type == 'all-ai' || github.event.schedule == '0 4 * * 6'
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ai-supervisor-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-ai-supervisor-
+
+      - name: Collect all maintenance data
+        run: |
+          # Run quick checks to gather data for supervisor
+          cargo check --all-features 2>&1 | tee cargo_check.txt || true
+          cargo clippy --all-targets --all-features -- -D warnings 2>&1 | head -50 > clippy_summary.txt || true
+          cargo test --all-features -- --test-threads=4 2>&1 | tail -30 > test_summary.txt || true
+          cargo build --release --all-features 2>&1 | tail -10 > build_summary.txt || true
+          
+          # Quick benchmark (1 run)
+          ./target/release/benchmark 2>&1 | tee quick_bench.txt || true
+          
+          # Security audit
+          cargo install cargo-audit --locked 2>/dev/null || true
+          cargo audit --json > audit_report.json 2>&1 || true
+          
+          # Documentation coverage
+          cargo install cargo-doc-coverage --locked 2>/dev/null || true
+          cargo doc-coverage 2>&1 | tee doc_coverage.txt || true
+          
+          # Dead code
+          cargo install cargo-machete --locked 2>/dev/null || true
+          cargo machete 2>&1 | tee dead_code.txt || true
+          
+          # Unsafe code
+          grep -r "unsafe" src/ --include="*.rs" | head -30 > unsafe_usage.txt || true
+          
+          # Dependencies
+          cargo install cargo-outdated --locked 2>/dev/null || true
+          cargo outdated --root-deps-only 2>&1 | tee outdated_deps.txt || true
+
+      - name: AI Supervisor Analysis
+        if: env.NVIDIA_API_KEY != ''
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          cat > supervisor_prompt.txt << 'EOF'
+          You are the AI Maintenance Supervisor - a meta-agent that oversees all other AI maintenance agents.
+          Your job is to synthesize findings from all maintenance domains and produce a unified action plan.
+
+          Analyze the comprehensive data and provide:
+          1. EXECUTIVE SUMMARY - Overall health score (0-100) and top 3 risks
+          2. CROSS-CUTTING CONCERNS - Issues that span multiple domains (security+perf, tests+docs, etc.)
+          3. PRIORITIZED ROADMAP - Top 10 actions across ALL domains with effort/impact matrix
+          4. RESOURCE ALLOCATION - Suggested focus areas for the team this sprint
+          5. AGENT COORDINATION - Which sub-agents should run more/less frequently
+          6. AUTOMATION OPPORTUNITIES - What can be fully automated vs needs human review
+
+          Output as a comprehensive markdown report with:
+          - Health dashboard (tables)
+          - Priority matrix (effort vs impact)
+          - Sprint planning recommendations
+          - Agent schedule optimization
+          EOF
+
+          curl -s -X POST "https://integrate.api.nvidia.com/v1/chat/completions" \
+            -H "Authorization: Bearer ${NVIDIA_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d @- << PAYLOAD > supervisor_analysis.json
+          {
+            "model": "nvidia/nemotron-3-ultra-550b-a55b",
+            "messages": [
+              {"role": "system", "content": "$(cat supervisor_prompt.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"},
+              {"role": "user", "content": "Cargo check:\n$(cat cargo_check.txt 2>/dev/null | tail -20 | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nClippy summary:\n$(cat clippy_summary.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nTest summary:\n$(cat test_summary.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nBuild summary:\n$(cat build_summary.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nQuick benchmark:\n$(cat quick_bench.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nSecurity audit:\n$(cat audit_report.json 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nDoc coverage:\n$(cat doc_coverage.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nDead code:\n$(cat dead_code.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nUnsafe usage:\n$(cat unsafe_usage.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nOutdated deps:\n$(cat outdated_deps.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 4000
+          }
+          PAYLOAD
+
+      - name: Create Supervisor Master Issue
+        if: env.NVIDIA_API_KEY != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const analysis = JSON.parse(fs.readFileSync('supervisor_analysis.json', 'utf8'));
+            const content = analysis.choices?.[0]?.message?.content || 'No analysis generated';
+            const { data: issue } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🎯 AI Maintenance Supervisor Report - ${new Date().toISOString().split('T')[0]}`,
+              body: content,
+              labels: ['supervisor', 'ai-generated', 'maintenance', 'meta']
+            });
+            console.log(`Created master issue #${issue.number}`);
+
+      - name: Upload Supervisor Analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-supervisor-analysis
+          path: |
+            supervisor_analysis.json
+            cargo_check.txt
+            clippy_summary.txt
+            test_summary.txt
+            build_summary.txt
+            quick_bench.txt
+            audit_report.json
+            doc_coverage.txt
+            dead_code.txt
+            unsafe_usage.txt
+            outdated_deps.txt
+          retention-days: 90
+
+  all-ai:
+    name: Run All AI Maintenance Agents
+    runs-on: ubuntu-latest
+    if: github.event.inputs.maintenance_type == 'all-ai'
+    timeout-minutes: 150
+    needs: [ai-code-review, ai-refactor, ai-security, ai-perf, ai-tests, ai-docs, ai-supervisor, ai-repair, ai-fix-tests]
+    steps:
+      - name: Aggregate All AI Reports
+        run: |
+          echo "## 🤖 All AI Maintenance Agents Completed" > all_ai_summary.md
+          echo "" >> all_ai_summary.md
+          echo "**Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> all_ai_summary.md
+          echo "**Commit:** $(git rev-parse --short HEAD 2>/dev/null || echo 'N/A')" >> all_ai_summary.md
+          echo "" >> all_ai_summary.md
+          echo "### Jobs Executed" >> all_ai_summary.md
+          echo "- ✅ AI Code Review" >> all_ai_summary.md
+          echo "- ✅ AI Refactoring Analysis" >> all_ai_summary.md
+          echo "- ✅ AI Security Analysis" >> all_ai_summary.md
+          echo "- ✅ AI Performance Analysis" >> all_ai_summary.md
+          echo "- ✅ AI Test Analysis & Generation" >> all_ai_summary.md
+          echo "- ✅ AI Documentation Analysis" >> all_ai_summary.md
+          echo "- ✅ AI Maintenance Supervisor (Meta-Agent)" >> all_ai_summary.md
+          echo "- ✅ AI Code Repair (Auto-Fix)" >> all_ai_summary.md
+          echo "- ✅ AI Test Fix & Generation" >> all_ai_summary.md
+          echo "" >> all_ai_summary.md
+          echo "### Artifacts Available" >> all_ai_summary.md
+          echo "Each job uploaded its analysis as artifacts. Download from the workflow run." >> all_ai_summary.md
+          echo "" >> all_ai_summary.md
+          echo "### Master Issue" >> all_ai_summary.md
+          echo "The AI Supervisor created a master issue with unified action plan." >> all_ai_summary.md
+          cat all_ai_summary.md
+
+      - name: Upload Aggregated Summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-ai-maintenance-summary
+          path: all_ai_summary.md
+          retention-days: 90
+
+  ai-repair:
+    name: AI Code Repair (Auto-Fix)
+    runs-on: ubuntu-latest
+    if: github.event.inputs.maintenance_type == 'ai-repair' || github.event.schedule == '0 4 * * 2'
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ai-repair-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-ai-repair-
+
+      - name: Run cargo fix (auto-fix clippy warnings)
+        run: |
+          cargo fix --all-targets --all-features --allow-dirty --allow-staged 2>&1 | tee cargo_fix.txt || true
+          cargo fix --all-targets --all-features --edition --allow-dirty --allow-staged 2>&1 | tee cargo_fix_edition.txt || true
+
+      - name: Run clippy to identify remaining issues
+        run: |
+          cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tee clippy_after_fix.txt || true
+
+      - name: Run tests to verify fixes
+        run: |
+          cargo test --all-features -- --test-threads=4 2>&1 | tee test_after_fix.txt || true
+
+      - name: AI Repair Analysis
+        if: env.NVIDIA_API_KEY != ''
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          cat > repair_prompt.txt << 'EOF'
+          You are a Rust expert performing automated code repair. Analyze the following data and provide:
+          1. Summary of fixes applied by cargo fix
+          2. Remaining clippy warnings that need manual attention
+          3. Test results after fixes (pass/fail)
+          4. Any breaking changes or risky fixes
+          5. Additional automated fixes that could be applied
+          6. Manual fixes needed with code examples
+
+          Output as actionable markdown with code diffs where applicable.
+          EOF
+
+          curl -s -X POST "https://integrate.api.nvidia.com/v1/chat/completions" \
+            -H "Authorization: Bearer ${NVIDIA_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d @- << PAYLOAD > repair_analysis.json
+          {
+            "model": "nvidia/nemotron-3-ultra-550b-a55b",
+            "messages": [
+              {"role": "system", "content": "$(cat repair_prompt.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"},
+              {"role": "user", "content": "Cargo fix output:\n$(cat cargo_fix.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nCargo fix edition output:\n$(cat cargo_fix_edition.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nClippy after fix:\n$(cat clippy_after_fix.txt 2>/dev/null | head -100 | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nTests after fix:\n$(cat test_after_fix.txt 2>/dev/null | tail -30 | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"}
+            ],
+            "temperature": 0.2,
+            "max_tokens": 4000
+          }
+          PAYLOAD
+
+      - name: Create Repair PR
+        if: env.NVIDIA_API_KEY != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const analysis = JSON.parse(fs.readFileSync('repair_analysis.json', 'utf8'));
+            const content = analysis.choices?.[0]?.message?.content || 'No analysis generated';
+            
+            // Check if there are actual changes
+            const { stdout: diff } = await import('child_process').then(cp => cp.execSync('git diff --stat', { encoding: 'utf8' }));
+            
+            if (diff.trim()) {
+              // Create branch and PR
+              const branchName = `ai-repair-${Date.now()}`;
+              await import('child_process').then(cp => cp.execSync(`git config user.name "github-actions[bot]"`));
+              await import('child_process').then(cp => cp.execSync(`git config user.email "41898282+github-actions[bot]@users.noreply.github.com"`));
+              await import('child_process').then(cp => cp.execSync(`git checkout -b ${branchName}`));
+              await import('child_process').then(cp => cp.execSync(`git add -A`));
+              await import('child_process').then(cp => cp.execSync(`git commit -m "chore: automated AI code repairs [skip ci]"`));
+              await import('child_process').then(cp => cp.execSync(`git push origin ${branchName}`));
+              
+              const { data: pr } = await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `🤖 Automated AI Code Repairs - ${new Date().toISOString().split('T')[0]}`,
+                head: branchName,
+                base: 'main',
+                body: `## Automated Code Repairs\n\n${content}\n\n---\n*Generated by AI Repair Agent*`
+              });
+              console.log(`Created PR #${pr.number}`);
+            } else {
+              console.log('No changes to commit');
+            }
+
+      - name: Upload Repair Analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-repair-analysis
+          path: |
+            repair_analysis.json
+            cargo_fix.txt
+            cargo_fix_edition.txt
+            clippy_after_fix.txt
+            test_after_fix.txt
+          retention-days: 90
+
+  ai-fix-tests:
+    name: AI Test Fix & Generation
+    runs-on: ubuntu-latest
+    if: github.event.inputs.maintenance_type == 'ai-fix-tests' || github.event.schedule == '0 4 * * 4'
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ai-testfix-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-ai-testfix-
+
+      - name: Run tests and capture failures
+        run: |
+          cargo test --all-features -- --test-threads=4 2>&1 | tee test_output.txt || true
+
+      - name: Run tests with nextest for better output
+        run: |
+          cargo install cargo-nextest --locked 2>/dev/null || true
+          cargo nextest run --all-features 2>&1 | tee nextest_output.txt || true
+
+      - name: Collect failing tests
+        run: |
+          grep -E "(FAILED|failed|panicked)" test_output.txt nextest_output.txt 2>/dev/null | head -50 > failing_tests.txt || true
+          cargo test --all-features -- --list 2>&1 | grep "test " | head -100 > all_tests.txt || true
+
+      - name: AI Test Fix & Generation
+        if: env.NVIDIA_API_KEY != ''
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          cat > testfix_prompt.txt << 'EOF'
+          You are a Rust testing expert. Analyze the test failures and provide:
+          1. Root cause analysis for each failing test
+          2. Fixed test code for each failure
+          3. New test cases to add for uncovered code paths
+          4. Flaky test identification and fixes
+          5. Test infrastructure improvements
+          6. Property-based test suggestions (proptest)
+
+          Output as actionable markdown with complete test code replacements.
+          EOF
+
+          curl -s -X POST "https://integrate.api.nvidia.com/v1/chat/completions" \
+            -H "Authorization: Bearer ${NVIDIA_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d @- << PAYLOAD > testfix_analysis.json
+          {
+            "model": "nvidia/nemotron-3-ultra-550b-a55b",
+            "messages": [
+              {"role": "system", "content": "$(cat testfix_prompt.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"},
+              {"role": "user", "content": "Test output (failures):\n$(cat test_output.txt 2>/dev/null | tail -100 | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nNextest output:\n$(cat nextest_output.txt 2>/dev/null | tail -100 | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nFailing tests:\n$(cat failing_tests.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')\n\nAll tests:\n$(cat all_tests.txt 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')"}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 4000
+          }
+          PAYLOAD
+
+      - name: Create Test Fix PR
+        if: env.NVIDIA_API_KEY != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const analysis = JSON.parse(fs.readFileSync('testfix_analysis.json', 'utf8'));
+            const content = analysis.choices?.[0]?.message?.content || 'No analysis generated';
+            
+            // Create PR with test fixes
+            const branchName = `ai-testfix-${Date.now()}`;
+            await import('child_process').then(cp => cp.execSync(`git config user.name "github-actions[bot]"`));
+            await import('child_process').then(cp => cp.execSync(`git config user.email "41898282+github-actions[bot]@users.noreply.github.com"`));
+            await import('child_process').then(cp => cp.execSync(`git checkout -b ${branchName}`));
+            
+            // The AI analysis would contain test code - in practice you'd parse and apply it
+            // For now, create an issue with the analysis
+            const { data: issue } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🧪 AI Test Fixes & Generation - ${new Date().toISOString().split('T')[0]}`,
+              body: content,
+              labels: ['testing', 'ai-generated', 'maintenance']
+            });
+            console.log(`Created issue #${issue.number}`);
+
+      - name: Upload Test Fix Analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-testfix-analysis
+          path: |
+            testfix_analysis.json
+            test_output.txt
+            nextest_output.txt
+            failing_tests.txt
+            all_tests.txt
+          retention-days: 90

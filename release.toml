@@ -1,0 +1,127 @@
+# ScaryDB Release Configuration
+# This file configures the release process for cross-platform distribution
+
+[package]
+name = "scarydb"
+version = "0.1.0"
+description = "High-performance, in-memory, actor-based hierarchical database"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/SanjaiPS-tech/ScaryDB"
+homepage = "https://github.com/SanjaiPS-tech/ScaryDB"
+documentation = "https://github.com/SanjaiPS-tech/ScaryDB#readme"
+keywords = ["database", "key-value", "in-memory", "actor-model", "hierarchical", "tcp-server"]
+categories = ["database-implementations", "network-programming", "command-line-utilities"]
+
+# Target platforms for distribution
+[targets]
+# Linux targets
+x86_64-unknown-linux-gnu = { name = "Linux x86_64 (glibc)", archive = "tar.gz", installer = "install_linux.sh" }
+aarch64-unknown-linux-gnu = { name = "Linux ARM64 (glibc)", archive = "tar.gz", installer = "install_linux.sh" }
+x86_64-unknown-linux-musl = { name = "Linux x86_64 (musl)", archive = "tar.gz", installer = "install_linux.sh" }
+aarch64-unknown-linux-musl = { name = "Linux ARM64 (musl)", archive = "tar.gz", installer = "install_linux.sh" }
+
+# macOS targets
+x86_64-apple-darwin = { name = "macOS x86_64 (Intel)", archive = "tar.gz", installer = "install_macos.sh" }
+aarch64-apple-darwin = { name = "macOS ARM64 (Apple Silicon)", archive = "tar.gz", installer = "install_macos.sh" }
+
+# Windows targets
+x86_64-pc-windows-gnu = { name = "Windows x86_64 (MinGW)", archive = "zip", installer = "install_windows.ps1" }
+x86_64-pc-windows-msvc = { name = "Windows x86_64 (MSVC)", archive = "zip", installer = "install_windows.ps1" }
+
+# Release artifacts to include
+[artifacts]
+include = [
+    "README.md",
+    "LICENSE*",
+    "CHANGELOG*",
+    "config.json",
+    "scarydb.sh",
+    "scarydb.bat",
+    "scarydb.ps1",
+    "scarydb.service",
+    "com.scarydb.server.plist",
+    "Install-ScaryDBService.ps1",
+    "Uninstall-ScaryDBService.ps1",
+    "install_linux.sh",
+    "install_macos.sh",
+    "install_windows.ps1",
+    "install_windows.bat",
+    "uninstall.sh",
+]
+
+# GitHub Release configuration
+[github]
+draft = false
+prerelease = false
+generate_release_notes = true
+tag_prefix = "v"
+
+# Cargo configuration for release builds
+[build]
+release_profile = "release"
+lto = "fat"
+codegen_units = 1
+panic = "abort"
+strip = true
+opt_level = 3
+
+# Cross-compilation targets to build in CI
+[ci]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-gnu",
+]
+
+# Test matrix
+[test]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-gnu",
+]
+
+# Distribution channels
+[distribution]
+channels = ["stable", "beta", "nightly"]
+default_channel = "stable"
+
+# Homebrew formula configuration (for macOS)
+[homebrew]
+tap = "yourusername/scarydb"
+formula_name = "scarydb"
+license = "MIT OR Apache-2.0"
+
+# Chocolatey package configuration (for Windows)
+[chocolatey]
+package_name = "scarydb"
+maintainer = "Your Name <your.email@example.com>"
+tags = "database key-value in-memory tcp-server"
+
+# Snap package configuration (for Linux)
+[snap]
+name = "scarydb"
+summary = "High-performance in-memory hierarchical database"
+description = "ScaryDB is a high-performance, in-memory, actor-based hierarchical database with TCP server-client architecture."
+grade = "stable"
+confinement = "strict"
+
+# Debian/Ubuntu package configuration
+[debian]
+package_name = "scarydb"
+maintainer = "Your Name <your.email@example.com>"
+section = "database"
+priority = "optional"
+depends = "libc6 (>= 2.31)"
+architecture = "amd64 arm64"
+
+# RPM package configuration (Fedora/RHEL)
+[rpm]
+name = "scarydb"
+summary = "High-performance in-memory hierarchical database"
+license = "MIT OR Apache-2.0"
+group = "Applications/Databases"
+requires = "glibc >= 2.31"
+architecture = "x86_64 aarch64"
