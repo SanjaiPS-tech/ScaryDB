@@ -118,6 +118,20 @@ jobs:
           echo "Binary size: $(du -h $BINARY | cut -f1)"
           $BINARY --version || true
 
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: target/${{ matrix.target }}/release/
+          format: spdx-json
+          output-file: sbom-${{ matrix.target }}.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.target }}
+          path: sbom-${{ matrix.target }}.json
+          retention-days: 7
+
       - name: Create distribution package
         run: |
           chmod +x package.sh
@@ -179,6 +193,18 @@ jobs:
           sha256sum * > checksums.txt
           cat checksums.txt
 
+      - name: Sign artifacts with cosign
+        uses: sigstore/cosign-installer@v3
+      - name: Sign release artifacts
+        if: env.COSIGN_PRIVATE_KEY != ''
+        run: |
+          cd release-assets
+          for file in *; do
+            if [ -f "$file" ]; then
+              cosign sign-blob --yes --output-signature "${file}.sig" "$file"
+            fi
+          done
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -189,9 +215,11 @@ jobs:
           generate_release_notes: true
           files: |
             release-assets/*
+            release-assets/*.sig
             artifacts/*/README.md
             artifacts/*/LICENSE*
             artifacts/*/CHANGELOG.md
+            sbom-*.json
 
   # Publish to package managers (optional, manual trigger)
   publish-homebrew:
@@ -250,8 +278,8 @@ jobs:
           context: .
           push: true
           tags: |
-            yourusername/scurydb:${{ github.ref_name }}
-            yourusername/scurydb:latest
+            sanjaips/scarydb:${{ github.ref_name }}
+            sanjaips/scarydb:latest
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max

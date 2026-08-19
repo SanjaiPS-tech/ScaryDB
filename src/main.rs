@@ -1,12 +1,14 @@
 mod catalog;
 mod config;
 mod engine;
+mod logging;
 mod parser;
 mod persistence;
 mod value;
 mod worker;
 
 use config::Config;
+use logging::init_logging;
 use parser::parse_command;
 use persistence::PersistenceManager;
 use serde::{Deserialize, Serialize};
@@ -19,7 +21,6 @@ use std::sync::Arc;
 use flume::{self, Sender};
 use parking_lot::{Mutex, RwLock};
 use std::thread;
-use tokio;
 use worker::{DatabaseSystem, Request, Response, WorkerPool};
 
 pub static QUIET: AtomicBool = AtomicBool::new(false);
@@ -35,6 +36,9 @@ const CONFIG_PATH: &str = "config.json";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
+    // Initialize structured logging
+    logging::init_logging();
+    
     let args: Vec<String> = env::args().collect();
     let mode = if args.len() > 1 {
         args[1].to_lowercase()
