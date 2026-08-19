@@ -1006,6 +1006,7 @@ dependencies = [
  "serde_json",
  "smallstr",
  "smallvec",
+ "thiserror",
  "tokio",
  "tower-http",
  "tracing",

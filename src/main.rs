@@ -4,6 +4,7 @@ mod engine;
 mod logging;
 mod parser;
 mod persistence;
+mod resources;
 mod value;
 mod worker;
 
@@ -11,6 +12,7 @@ use config::Config;
 use logging::init_logging;
 use parser::parse_command;
 use persistence::PersistenceManager;
+use resources::{commands, ResourceLimits, ResourceManager};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::io::{self, BufRead, BufReader, Write};

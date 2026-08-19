@@ -31,6 +31,7 @@ tracing = { version = "0.1", features = ["std"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
 metrics = "0.21"
 metrics-exporter-prometheus = "0.13"
+thiserror = "1.0"
 # HTTP for health checks
 axum = "0.7"
 tokio = { version = "1.0", features = ["rt-multi-thread", "net", "signal", "sync", "macros"] }
