@@ -1,47 +1,92 @@
 # ScaryDB 🎃
 
-A high-performance, in-memory, actor-based hierarchical database written in Rust. It utilizes a nested key-value store structured as `Database -> Bucket -> Key -> Value` with automatic/explicit value types, an internal ID catalog mapping, a TCP server-client architecture with a thread pool/request queue concurrency model, and dual-path binary logging/JSON checkpoints persistence.
+A high-performance, in-memory, actor-based hierarchical database written in Rust. It utilizes a nested key-value store structured as `Database → Bucket → Key → Value` with automatic/explicit value types, an internal ID catalog mapping, a TCP server-client architecture with a thread pool/request queue concurrency model, and dual-path binary logging/JSON checkpoints persistence.
 
 ---
 
-## Getting Started (CLI Modes)
+## 🚀 Quick Start
 
-ScaryDB compiles into a multi-purpose executable that supports four running modes. Run these using Cargo:
+### Option 1: Download Pre-built Binary (Recommended)
 
-### **1. Standalone Mode (Recommended for Development) **
-**This mode starts both the database server in the background and the interactive REPL client in the foreground simultaneously.** This is the easiest way to start using ScaryDB!
+1. Go to [Releases](https://github.com/SanjaiPS-tech/ScaryDB/releases)
+2. Download for your platform:
+   - **Linux**: `scarydb-<version>-x86_64-unknown-linux-gnu.tar.gz` (or ARM64)
+   - **macOS**: `scarydb-<version>-x86_64-apple-darwin.tar.gz` (Intel) or `scarydb-<version>-aarch64-apple-darwin.tar.gz` (Apple Silicon)
+   - **Windows**: `scarydb-<version>-x86_64-pc-windows-gnu.zip`
+3. Extract and run:
+
 ```bash
-cargo run -- standalone
-# OR
-cargo run -- --standalone
+# Linux/macOS
+tar -xzf scarydb-*.tar.gz
+cd scarydb-*
+./scarydb.sh standalone
+
+# Windows (PowerShell)
+Expand-Archive scarydb-*.zip
+cd scarydb-*
+.\scarydb.ps1 standalone
 ```
 
-### 2. Start the Database Server
-Starts the TCP server on the host and port defined in `config.json`.
-```bash
-cargo run -- server
-```
->*Note: If no mode argument is supplied, ScaryDB defaults to running as a server.*
+### Option 2: Install as System Service
 
-### 3. Launch the Interactive REPL Client
-Launches the command-line client to connect and execute queries against a running server.
 ```bash
-cargo run -- client
+# Linux (systemd)
+sudo ./install_linux.sh
+
+# macOS (launchd)
+sudo ./install_macos.sh
+
+# Windows (Admin PowerShell)
+.\install_windows.ps1
 ```
 
-### 4. Read the Binary WAL Log
-Decodes and translates a binary transaction log (`operations.log`) into a human-readable text stream of transaction actions.
+Then connect:
 ```bash
-cargo run -- log-read <path_to_operations.log>
-# Example:
-cargo run -- log-read ./data/operations.log
+scarydb client
+```
+
+### Option 3: Build from Source
+
+Requires Rust 1.70+.
+
+```bash
+git clone https://github.com/SanjaiPS-tech/ScaryDB.git
+cd ScaryDB
+./build.sh --package
+
+# Run standalone mode (server + client)
+./scarydb.sh standalone
 ```
 
 ---
 
-## 🛠️ Database Query Syntax (Interactive REPL)
+## 🐳 Docker (Multi-arch)
 
-Once connected via the client, you can execute case-insensitive SQL-like queries. Multiple operations can be chained together using the `/` separator, and statements optionally terminate with a semicolon `;`.
+```bash
+# Run with Docker
+docker run -d -p 6379:6379 -v scarydb-data:/opt/scarydb/data sanjaips/scarydb:latest
+
+# Or build locally
+docker buildx build --platform linux/amd64,linux/arm64 -t scarydb:local .
+```
+
+---
+
+## 🎮 Running Modes
+
+| Mode | Description | Command |
+|------|-------------|---------|
+| **Standalone** | Server + REPL client together (dev) | `scarydb standalone` |
+| **Server** | TCP server only (production) | `scarydb server` |
+| **Client** | REPL client only | `scarydb client` |
+| **Log Reader** | Read binary WAL log | `scarydb log-read <path>` |
+| **Version** | Show version | `scarydb --version` |
+
+---
+
+## 🎮 Database Query Syntax (Interactive REPL)
+
+Once connected via the client, you can execute case-insensitive SQL-like queries. Multiple operations can be chained using the `/` separator, and statements optionally terminate with a semicolon `;`.
 
 ### 1. Database Definition Commands (DDC)
 Used to structure database context and bucket namespaces:
@@ -84,72 +129,314 @@ Used to view and update server configurations at runtime:
 *   `SET CONFIG <property> <value>;` - Set a configuration property (saves updates to `config.json` automatically).
     *   *Example:* `SET CONFIG storage.checkpoint_interval_ops 100`
 
+### 6. Resource Management Commands (RMC)
+Used to monitor and manage resource limits, quotas, and pressure:
+*   `SHOW RESOURCE USAGE;` - Display current resource usage (memory, connections, databases, buckets, keys, disk, pressure levels).
+*   `SHOW RESOURCE LIMITS;` - Display configured resource limits.
+
 ---
 
 ## ⚙️ Configuration Properties (`config.json`)
 
 The following settings are managed in `config.json`:
-*   `server.workers`: Number of thread pool worker threads (default is `1` for lock-free storage execution).
-*   `storage.data_dir`: The directory path where database state snapshots and write-ahead logs are persisted.
-*   `storage.checkpoint_interval_ops`: The number of mutation operations allowed before a JSON snapshot checkpoint is written and the WAL log is truncated.
-*   `memory.max_memory_kb`: Maximum memory threshold for warning limits.
-*   `network.host` / `network.port`: Connection binding settings.
+
+| Property | Description | Default |
+|----------|-------------|---------|
+| `server.workers` | Number of thread pool worker threads | `1` |
+| `storage.data_dir` | Data directory for snapshots and WAL | `./data` |
+| `storage.checkpoint_interval_ops` | Operations between JSON checkpoints | `10000` |
+| `memory.max_memory_kb` | Memory limit (0 = unlimited) | `0` |
+| `network.host` | Bind address | `127.0.0.1` |
+| `network.port` | TCP port | `6379` |
+
+### Runtime Resource Limits (via Resource Manager)
+
+| Property | Description | Default |
+|----------|-------------|---------|
+| `max_memory_kb` | Max memory (KB), 0 = unlimited | `0` |
+| `max_connections` | Max concurrent connections | `10000` |
+| `max_databases` | Max databases | `1000` |
+| `max_buckets_per_db` | Max buckets per database | `10000` |
+| `max_keys_per_bucket` | Max keys per bucket | `1000000` |
+| `max_key_size_bytes` | Max key size | `65536` (64KB) |
+| `max_value_size_bytes` | Max value size | `1048576` (1MB) |
+| `max_disk_mb` | Max disk usage (MB), 0 = unlimited | `0` |
+| `memory_pressure_threshold` | Memory pressure threshold (0.0-1.0) | `0.85` |
+| `disk_pressure_threshold` | Disk pressure threshold (0.0-1.0) | `0.90` |
 
 ---
 
-## Performance Benchmarks & Testing
+## 📊 Health & Monitoring
 
-ScaryDB is optimized to perform as a blazingly fast in-memory key-value store with cached WAL descriptor streaming. 
+### HTTP Endpoints (when health server enabled)
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | Liveness probe - returns version, uptime, status |
+| `GET /ready` | Readiness probe - checks database/storage accessibility |
+| `GET /metrics` | Prometheus metrics exposition format |
+
+### Structured Logging
+
+ScaryDB uses structured JSON logging with correlation IDs:
+
+```json
+{
+  "timestamp": "2026-08-19T09:36:36.619Z",
+  "level": "INFO",
+  "fields": {
+    "message": "ScaryDB logging initialized",
+    "version": "0.1.0"
+  },
+  "target": "scarydb::logging",
+  "threadName": "main",
+  "threadId": "ThreadId(1)"
+}
+```
+
+Set log level: `RUST_LOG=debug scarydb server`
+
+### Prometheus Metrics
+
+Key metrics exposed:
+- `scarydb_requests_total{type="total|success|error"}`
+- `scarydb_uptime_seconds`
+- `scarydb_request_duration_seconds`
+- Resource usage gauges (memory, connections, disk, pressure levels)
+
+---
+
+## 🛡️ Resource Management
+
+ScaryDB includes a built-in resource manager with:
+
+- **Limits**: Configurable limits for memory, connections, databases, buckets, keys, disk
+- **Per-database quotas**: Per-database resource quotas
+- **Pressure detection**: Automatic memory/disk pressure detection with graceful degradation
+- **Connection pooling**: RAII connection guards with automatic cleanup
+- **Background monitoring**: Periodic resource usage snapshots with pressure alerts
+
+### CLI Commands
+
+```sql
+-- Show current resource usage
+SHOW RESOURCE USAGE;
+
+-- Show configured limits
+SHOW RESOURCE LIMITS;
+```
+
+---
+
+## 🔧 Installation Scripts
+
+| Platform | Script | Service Manager |
+|----------|--------|-----------------|
+| Linux | `./install_linux.sh` | systemd |
+| macOS | `./install_macos.sh` | launchd |
+| Windows | `.\install_windows.ps1` | Windows Service |
+
+### Linux Service Management
+```bash
+sudo systemctl start scarydb
+sudo systemctl status scarydb
+sudo journalctl -u scarydb -f
+```
+
+### macOS Service Management
+```bash
+sudo launchctl load /Library/LaunchDaemons/com.scarydb.server.plist
+launchctl list | grep scarydb
+tail -f /opt/scarydb/logs/scarydb.log
+```
+
+### Windows Service Management
+```powershell
+Start-Service ScaryDB
+Get-Service ScaryDB
+Get-WinEvent -LogName Application -ProviderName ScaryDB
+```
+
+---
+
+## 🔨 Building from Source
+
+### Prerequisites
+- Rust 1.70+ (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
+
+### Build Commands
+
+```bash
+git clone https://github.com/SanjaiPS-tech/ScaryDB.git
+cd ScaryDB
+
+# Quick build (release mode)
+./build.sh
+
+# Debug build
+./build.sh -m debug
+
+# Cross-compile for target
+./build.sh -t x86_64-unknown-linux-musl
+./build.sh -t aarch64-apple-darwin
+
+# Build and create distribution package
+./build.sh --package
+
+# Clean build
+./build.sh --clean -m release
+```
+
+### Cross-Compilation Targets
+
+| Target | Platform | Notes |
+|--------|----------|-------|
+| `x86_64-unknown-linux-gnu` | Linux x86_64 (glibc) | Default on Linux |
+| `aarch64-unknown-linux-gnu` | Linux ARM64 (glibc) | Requires cross toolchain |
+| `x86_64-unknown-linux-musl` | Linux x86_64 (musl) | Fully static |
+| `aarch64-unknown-linux-musl` | Linux ARM64 (musl) | Fully static |
+| `x86_64-apple-darwin` | macOS Intel | Build on macOS |
+| `aarch64-apple-darwin` | macOS Apple Silicon | Build on macOS |
+| `x86_64-pc-windows-gnu` | Windows (MinGW) | Cross from Linux |
+| `x86_64-pc-windows-msvc` | Windows (MSVC) | Build on Windows |
+
+---
+
+## ⚡ Performance Benchmarks
+
+ScaryDB is optimized as a blazingly fast in-memory key-value store with cached WAL descriptor streaming.
 
 ### Latency Profiles (Optimized Release Mode)
-*   **GET (Reads)**: **~22,700 operations/second** (Average latency: **~44 microseconds**)
-*   **SET (Writes)**: **~13,200 operations/second** (Average latency: **~76 microseconds**)
+
+| Operation | Throughput | Avg Latency |
+|-----------|------------|-------------|
+| **GET (Reads)** | **~22,700 ops/sec** | **~44 µs** |
+| **SET (Writes)** | **~13,200 ops/sec** | **~76 µs** |
 
 ### Running Benchmarks
-We maintain an explicit benchmarking binary. Since ScaryDB configures `default-run = "scarydb"`, cargo commands default to the database server. To run the benchmark, you must explicitly state the benchmark binary target:
 
-1. Start the database server in a separate terminal:
-   ```bash
-   cargo run --release --bin scarydb -- server
-   ```
-2. Execute the benchmark client in your main terminal:
-   ```bash
-   cargo run --release --bin benchmark
-   ```
+```bash
+# Terminal 1: Start server
+cargo run --release --bin scarydb -- server
+
+# Terminal 2: Run benchmark
+cargo run --release --bin benchmark
+```
 
 ---
 
-# ⚠️ Some known errors we have encountered.
+## 🏗️ Architecture
 
-## ⚠️ Troubleshooting: OS Error 32 (File in use)
+```
+┌─────────────────────────────────────────────────────┐
+│                    ScaryDB                          │
+├─────────────────────────────────────────────────────┤
+│  TCP Server (mio) ←→ Thread Pool (parking_lot)     │
+│         ↓                    ↓                      │
+│  Worker Threads ←→  Database Engine (DashMap)      │
+│         ↓                    ↓                      │
+│  WAL Writer ←→  Persistence Manager (JSON + WAL)   │
+│         ↓                    ↓                      │
+│  Resource Manager ←→  Health/Metrics Server (Axum) │
+└─────────────────────────────────────────────────────┘
+```
 
-If you see an error like this when building:
-> `error: failed to remove ... target\debug\deps\scarydb.exe: The process cannot access the file because it is being used by another process. (os error 32)`
+### Key Technologies
+- **Concurrency**: `parking_lot` (RwLock/Mutex), `flume` (bounded channels), `crossbeam`
+- **Networking**: `mio` (epoll/kqueue/IOCP), `tokio` (health server)
+- **Storage**: `dashmap` (concurrent HashMap), `memmap2` (mmap), `serde_json`
+- **Observability**: `tracing` (structured logging), `metrics` + `metrics-exporter-prometheus`
+- **Health**: `axum` + `tower-http` (HTTP endpoints)
 
-This happens because the ScaryDB Server or REPL Client is running in the background. Cargo cannot overwrite the binary while it is active. To resolve:
+---
 
-### 1. Shut down running ScaryDB instances
-*   **From the running terminal:** Press `Ctrl + C` to send a graceful termination signal.
-*   **From a separate terminal (Force terminate):**
-    *   **Windows (PowerShell):**
-        ```powershell
-        Stop-Process -Name scarydb -Force
-        ```
-    *   **Windows (CMD):**
-        ```cmd
-        taskkill /F /IM scarydb.exe
-        ```
-    *   **Linux / macOS:**
-        ```bash
-        killall scarydb
-        # or
-        pkill scarydb
-        ```
+## 🐛 Troubleshooting
 
-### Safety Precautions & Data Integrity
-*   **Final Checkpoints:** ScaryDB executes a graceful final checkpoint (`catalog.db` and database JSON state serialization) on clean exit to save everything to disk.
-*   **WAL Persistence:** If you are forced to use a force-kill command (e.g. `Stop-Process` or `taskkill /F`), the final checkpoint will be skipped. However, ScaryDB's Write-Ahead Log (`operations.log`) commits mutations immediately in binary format. On the next start, the engine will replay the WAL transactions to restore your state.
-*   **Best Practice:** Always try sending a standard interrupt signal (`Ctrl + C` or normal termination) before executing a force-kill, to ensure the JSON checkpoint files and catalogs are perfectly synchronized.
+### Port Already in Use
+```bash
+# Find and kill process
+lsof -i :6379
+kill -9 <PID>
 
-### 2. Run `cargo build` or `cargo run` again
-Once all instances are stopped, the file lock is released, and Cargo will compile successfully.
+# Or change port
+SET CONFIG network.port 6380;
+```
+
+### Permission Denied (Linux/macOS)
+```bash
+# Run installer with sudo
+sudo ./install_linux.sh
+
+# Or fix permissions
+chmod +x scarydb.sh scarydb
+```
+
+### Binary Not Found After Build
+```bash
+# Clean and rebuild
+./build.sh --clean -m release
+
+# Check target directory
+ls -la target/release/
+```
+
+### Windows Service Won't Start
+```powershell
+# Check Event Viewer
+Get-WinEvent -LogName Application -ProviderName ScaryDB | Select -First 20
+
+# Check binary runs directly
+cd "C:\Program Files\ScaryDB"
+.\scarydb.exe server
+```
+
+### Connection Refused
+```bash
+# Check server is running
+ps aux | grep scarydb
+# or
+sudo systemctl status scarydb
+
+# Check port
+netstat -tlnp | grep 6379
+ss -tlnp | grep 6379
+```
+
+---
+
+## 🔒 Security Considerations
+
+1. **Network Binding**: Default binds to `127.0.0.1` only. Use `0.0.0.0` with firewall rules for external access.
+2. **Authentication**: Not yet implemented (planned). Use network isolation (VPN, firewall).
+3. **File Permissions**: Data directory should be owned by service user only.
+4. **Updates**: Regularly update from GitHub releases for security patches.
+
+---
+
+## 📚 Documentation
+
+- [QUICKSTART.md](QUICKSTART.md) - 5-minute getting started guide
+- [SETUP.md](SETUP.md) - Comprehensive installation guide for all platforms
+- [CHANGELOG.md](CHANGELOG.md) - Version history
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repo
+2. Create feature branch
+3. Run tests: `cargo test`
+4. Submit PR
+
+---
+
+## 📄 License
+
+MIT OR Apache-2.0
+
+---
+
+## 🙋 Support
+
+- **GitHub Issues**: https://github.com/SanjaiPS-tech/ScaryDB/issues
+- **Discussions**: https://github.com/SanjaiPS-tech/ScaryDB/discussions
