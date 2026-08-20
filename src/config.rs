@@ -9,6 +9,8 @@ pub struct Config {
     pub storage: StorageSettings,
     pub memory: MemorySettings,
     pub network: NetworkSettings,
+    pub tls: TlsSettings,
+    pub auth: AuthSettings,
     pub metadata: RuntimeMetadata,
 }
 
@@ -35,6 +37,23 @@ pub struct NetworkSettings {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TlsSettings {
+    pub enabled: bool,
+    pub cert_file: String,
+    pub key_file: String,
+    pub ca_file: Option<String>,
+    pub require_client_cert: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AuthSettings {
+    pub enabled: bool,
+    pub jwt_secret: String,
+    pub api_keys: Vec<String>,
+    pub token_expiry_hours: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RuntimeMetadata {
     pub version: String,
     pub startup_time: String,
@@ -55,6 +74,19 @@ impl Default for Config {
                     .ok()
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(6379), // default port for custom DB (similar to Redis/Memcached)
+            },
+            tls: TlsSettings {
+                enabled: false,
+                cert_file: "./certs/server.crt".to_string(),
+                key_file: "./certs/server.key".to_string(),
+                ca_file: None,
+                require_client_cert: false,
+            },
+            auth: AuthSettings {
+                enabled: false,
+                jwt_secret: "change-me-in-production".to_string(),
+                api_keys: vec![],
+                token_expiry_hours: 24,
             },
             metadata: RuntimeMetadata {
                 version: env!("CARGO_PKG_VERSION").to_string(),

@@ -53,6 +53,19 @@ fn write_test_config(config_dir: &Path, port: u16, data_dir: &Path) -> PathBuf {
     "host": "127.0.0.1",
     "port": {}
   }},
+  "tls": {{
+    "enabled": false,
+    "cert_file": "./certs/server.crt",
+    "key_file": "./certs/server.key",
+    "ca_file": null,
+    "require_client_cert": false
+  }},
+  "auth": {{
+    "enabled": false,
+    "jwt_secret": "change-me-in-production",
+    "api_keys": [],
+    "token_expiry_hours": 24
+  }},
   "metadata": {{
     "version": "0.1.0",
     "startup_time": "2026-01-01T00:00:00Z"

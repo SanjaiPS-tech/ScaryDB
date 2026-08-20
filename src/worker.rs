@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::engine::StorageEngine;
 use crate::parser::Command;
 use crate::persistence::{LogOp, PersistenceManager};
+use crate::tls_auth::{AuthContext, AuthManager};
 use crate::value::Value;
 use flume::{Receiver, Sender};
 use parking_lot::RwLock;
@@ -12,6 +13,7 @@ use std::thread;
 pub struct Request {
     pub command: Command,
     pub db_context: Option<u32>,
+    pub auth_context: AuthContext,
     pub response_tx: Sender<Response>,
 }
 
@@ -26,17 +28,20 @@ pub struct DatabaseSystem {
     pub config: Config,
     pub config_path: String,
     pub mutations_since_checkpoint: usize,
+    pub auth_manager: Arc<AuthManager>,
 }
 
 impl DatabaseSystem {
     pub fn new(config: Config, config_path: &str) -> Self {
         let persistence = PersistenceManager::new(Path::new(&config.storage.data_dir));
+        let auth_manager = Arc::new(AuthManager::new(&config.auth));
         DatabaseSystem {
             engine: StorageEngine::new(),
             persistence,
             config,
             config_path: config_path.to_string(),
             mutations_since_checkpoint: 0,
+            auth_manager,
         }
     }
 
@@ -70,6 +75,8 @@ impl DatabaseSystem {
             Command::ListConfig => Ok(self.execute_list_config()),
             Command::GetConfig { property } => self.execute_get_config(property),
             Command::SetConfig { property, value } => self.execute_set_config(property, value),
+            // Auth commands handled at connection level - should not reach here
+            Command::Auth { .. } | Command::AuthToken { .. } => Err("Auth commands handled at connection level".to_string()),
         };
 
         Response {

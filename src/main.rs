@@ -5,14 +5,16 @@ mod logging;
 mod parser;
 mod persistence;
 mod resources;
+mod tls_auth;
 mod value;
 mod worker;
 
 use config::Config;
 use logging::init_logging;
-use parser::parse_command;
+use parser::{parse_command, Command};
 use persistence::PersistenceManager;
 use resources::{commands, ResourceLimits, ResourceManager};
+use tls_auth::{AuthManager, AuthContext, TlsConfig};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::io::{self, BufRead, BufReader, Write};
@@ -23,6 +25,7 @@ use std::sync::Arc;
 use flume::{self, Sender};
 use parking_lot::{Mutex, RwLock};
 use std::thread;
+use tokio;
 use worker::{DatabaseSystem, Request, Response, WorkerPool};
 
 pub static QUIET: AtomicBool = AtomicBool::new(false);
@@ -247,7 +250,10 @@ fn handle_client_connection(
 
     let (response_tx, response_rx) = flume::bounded(1);
 
-    for line in reader.lines() {
+        // Create auth context for this connection
+        let mut auth_context = AuthContext::default();
+
+        for line in reader.lines() {
         let raw_line = match line {
             Ok(l) => l,
             Err(_) => break, // Client disconnected
@@ -292,10 +298,46 @@ fn handle_client_connection(
             }
         };
 
+        // Handle AUTH command for API key authentication
+        if matches!(command, Command::Auth { .. }) {
+            let auth_result = handle_auth_command(&system, command, &mut auth_context);
+            let wire_res = match auth_result {
+                Ok(msg) => WireResponse {
+                    status: "ok".to_string(),
+                    message: msg,
+                    active_db: get_active_db_name(&system, db_context),
+                },
+                Err(msg) => WireResponse {
+                    status: "err".to_string(),
+                    message: msg,
+                    active_db: get_active_db_name(&system, db_context),
+                },
+            };
+            let _ = send_wire_response(&mut write_stream, &wire_res);
+            continue;
+        }
+
+        // Check authentication if enabled
+        let system_read = system.read();
+        if system_read.auth_manager.is_enabled() && !auth_context.authenticated {
+            if !quiet {
+                println!("[Server] Authentication required but not authenticated");
+            }
+            let wire_res = WireResponse {
+                status: "err".to_string(),
+                message: "Authentication required. Use AUTH <api_key> or AUTH TOKEN <jwt_token>".to_string(),
+                active_db: get_active_db_name(&system, db_context),
+            };
+            let _ = send_wire_response(&mut write_stream, &wire_res);
+            continue;
+        }
+        drop(system_read);
+
         // Submit request to worker queue
         let req = Request {
             command,
             db_context,
+            auth_context: auth_context.clone(),
             response_tx: response_tx.clone(),
         };
 
@@ -485,6 +527,55 @@ fn run_client(is_standalone: bool) {
 }
 
 // --- LOG READER MODE ---
+
+// Helper function to handle AUTH command
+fn handle_auth_command(
+    system: &Arc<RwLock<DatabaseSystem>>,
+    command: Command,
+    auth_context: &mut AuthContext,
+) -> Result<String, String> {
+    // Extract auth manager before matching
+    let auth_manager = {
+        let system_read = system.read();
+        Arc::clone(&system_read.auth_manager)
+    };
+
+    match command {
+        Command::Auth { api_key } => {
+            if auth_manager.is_enabled() {
+                if auth_manager.validate_api_key(&api_key) {
+                    auth_context.authenticated = true;
+                    auth_context.api_key = Some(api_key.clone());
+                    auth_context.permissions = vec!["read".to_string(), "write".to_string()];
+                    Ok(format!("Authenticated with API key: {}", api_key))
+                } else {
+                    Err("Invalid API key".to_string())
+                }
+            } else {
+                auth_context.authenticated = true;
+                auth_context.api_key = Some(api_key.clone());
+                auth_context.permissions = vec!["read".to_string(), "write".to_string()];
+                Ok("Authentication disabled - connection authenticated".to_string())
+            }
+        }
+        Command::AuthToken { token } => {
+            if auth_manager.is_enabled() {
+                match auth_manager.validate_token(&token) {
+                    Ok(token_data) => {
+                        auth_context.authenticated = true;
+                        auth_context.api_key = Some(token_data.claims.sub);
+                        auth_context.permissions = token_data.claims.permissions;
+                        Ok("Authenticated with JWT token".to_string())
+                    }
+                    Err(e) => Err(e),
+                }
+            } else {
+                Err("Authentication disabled - cannot validate token".to_string())
+            }
+        }
+        _ => Err("Unknown auth command".to_string()),
+    }
+}
 
 fn run_log_reader(path: &str) {
     println!("=== ScaryDB Log Reader ===");

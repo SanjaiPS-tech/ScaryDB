@@ -127,6 +127,10 @@ pub enum Command {
     ListConfig,
     GetConfig { property: String },
     SetConfig { property: String, value: String },
+
+    // Auth
+    Auth { api_key: String },
+    AuthToken { token: String },
 }
 
 pub fn parse_command(input: &str) -> Result<Command, String> {
@@ -353,6 +357,26 @@ pub fn parse_command(input: &str) -> Result<Command, String> {
         "MAN" => {
             consume_optional_semicolon(&tokens, &mut cursor);
             Ok(Command::Man)
+        }
+        "AUTH" => {
+            if cursor >= tokens.len() {
+                return Err("Expected API key or TOKEN after AUTH".to_string());
+            }
+            let sub = expect_word(get_token(&tokens, &mut cursor)?)?.to_uppercase();
+            match sub.as_str() {
+                "TOKEN" => {
+                    if cursor >= tokens.len() {
+                        return Err("Expected token after AUTH TOKEN".to_string());
+                    }
+                    let token = expect_word(get_token(&tokens, &mut cursor)?)?;
+                    consume_optional_semicolon(&tokens, &mut cursor);
+                    Ok(Command::AuthToken { token })
+                }
+                api_key => {
+                    consume_optional_semicolon(&tokens, &mut cursor);
+                    Ok(Command::Auth { api_key: api_key.to_string() })
+                }
+            }
         }
         other => Err(format!("Unknown command verb: '{}'", other)),
     }

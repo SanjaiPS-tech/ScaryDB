@@ -32,6 +32,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"]
 metrics = "0.21"
 metrics-exporter-prometheus = "0.13"
 thiserror = "1.0"
+# TLS dependencies
+rustls = { version = "0.23", features = ["std", "logging"] }
+rustls-pemfile = "1.0"
+tokio-rustls = "0.26"
+# Auth dependencies
+jsonwebtoken = "9.2"
 # HTTP for health checks
 axum = "0.7"
 tokio = { version = "1.0", features = ["rt-multi-thread", "net", "signal", "sync", "macros"] }
