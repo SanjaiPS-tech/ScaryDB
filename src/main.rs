@@ -299,7 +299,7 @@ fn handle_client_connection(
         };
 
         // Handle AUTH command for API key authentication
-        if matches!(command, Command::Auth { .. }) {
+        if matches!(command, Command::Auth { .. } | Command::AuthToken { .. }) {
             let auth_result = handle_auth_command(&system, command, &mut auth_context);
             let wire_res = match auth_result {
                 Ok(msg) => WireResponse {

@@ -146,7 +146,8 @@ impl AuthManager {
         if !self.enabled {
             return true; // Auth disabled, allow all
         }
-        self.api_keys.read().unwrap().contains(api_key)
+        let keys = self.api_keys.read().unwrap();
+        keys.contains(api_key)
     }
 
     /// Add an API key

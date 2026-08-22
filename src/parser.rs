@@ -362,8 +362,9 @@ pub fn parse_command(input: &str) -> Result<Command, String> {
             if cursor >= tokens.len() {
                 return Err("Expected API key or TOKEN after AUTH".to_string());
             }
-            let sub = expect_word(get_token(&tokens, &mut cursor)?)?.to_uppercase();
-            match sub.as_str() {
+            let sub = expect_word(get_token(&tokens, &mut cursor)?)?;
+            let sub_upper = sub.to_uppercase();
+            match sub_upper.as_str() {
                 "TOKEN" => {
                     if cursor >= tokens.len() {
                         return Err("Expected token after AUTH TOKEN".to_string());
@@ -372,9 +373,10 @@ pub fn parse_command(input: &str) -> Result<Command, String> {
                     consume_optional_semicolon(&tokens, &mut cursor);
                     Ok(Command::AuthToken { token })
                 }
-                api_key => {
+                _ => {
+                    // Use the original case for API key, only uppercase for TOKEN subcommand
                     consume_optional_semicolon(&tokens, &mut cursor);
-                    Ok(Command::Auth { api_key: api_key.to_string() })
+                    Ok(Command::Auth { api_key: sub })
                 }
             }
         }
