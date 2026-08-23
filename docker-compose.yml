@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  scarydb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: scarydb:local
+    container_name: scarydb
+    ports:
+      - "6379:6379"
+    volumes:
+      - scarydb-data:/app/data
+      - ./config.json:/app/config.json:ro
+    environment:
+      - RUST_LOG=info
+    healthcheck:
+      test: ["CMD", "/app/scurydb", "--version"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+volumes:
+  scarydb-data:
+    driver: local
+
+networks:
+  default:
+    name: scarydb-network

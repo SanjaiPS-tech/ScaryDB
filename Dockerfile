@@ -27,7 +27,7 @@ COPY src ./src
 RUN cargo build --release
 
 # Runtime stage - distroless (multi-arch)
-FROM gcr.io/distroless/cc-debian12
+FROM gcr.io/distroless/cc-debian12:nonroot
 
 WORKDIR /app
 
@@ -35,14 +35,16 @@ WORKDIR /app
 COPY --from=builder /app/target/release/scurydb /app/scurydb
 COPY config.json /app/config.json
 
-# Create data directory (distroless runs as nonroot by default)
-# The nonroot user is already created in distroless
+# Create data directory for persistence
+USER nonroot
+RUN mkdir -p /app/data
 
 # Expose port
 EXPOSE 6379
 
-# Use non-root user
-USER nonroot
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD ["/app/scurydb", "--version"]
 
 # Entry point
 ENTRYPOINT ["/app/scurydb", "server"]

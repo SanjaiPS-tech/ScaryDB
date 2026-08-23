@@ -86,12 +86,72 @@ cd ScaryDB
 
 ## 🐳 Docker (Multi-arch)
 
+### Quick Start with Docker Compose (Recommended)
+
+```bash
+# Development
+docker-compose up -d
+
+# Production with monitoring stack
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+### Manual Docker Commands
+
 ```bash
 # Run with Docker
-docker run -d -p 6379:6379 -v scarydb-data:/opt/scarydb/data sanjaips/scarydb:latest
+docker run -d -p 6379:6379 -v scarydb-data:/app/data scarydb:local
 
-# Or build locally
+# Build locally (multi-arch)
 docker buildx build --platform linux/amd64,linux/arm64 -t scarydb:local .
+
+# Run with custom config
+docker run -d -p 6379:6379 \
+  -v $(pwd)/config.json:/app/config.json:ro \
+  -v scarydb-data:/app/data \
+  scarydb:local
+
+# Run with TLS certificates
+docker run -d -p 6379:6379 \
+  -v $(pwd)/config.json:/app/config.json:ro \
+  -v $(pwd)/certs:/app/certs:ro \
+  -v scarydb-data:/app/data \
+  scarydb:local
+```
+
+### Monitoring Stack (Production)
+
+The production compose file includes:
+- **Prometheus** (port 9090) - Metrics collection
+- **Grafana** (port 3000) - Dashboards with pre-built ScaryDB overview
+- **Loki** (port 3100) - Log aggregation
+- **Promtail** - Log shipping
+
+```bash
+# Start full monitoring stack
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+# Access Grafana: http://localhost:3000 (admin/changeme)
+# Access Prometheus: http://localhost:9090
+```
+
+### Configuration
+
+- Mount `config.json` as read-only: `-v ./config.json:/app/config.json:ro`
+- For TLS: mount certs directory `-v ./certs:/app/certs:ro`
+- Data persists in named volume `scarydb-data`
+
+### Health Checks
+
+```bash
+# Container health
+docker ps
+
+# Application health
+docker exec scarydb /app/scurydb --version
+
+# View logs
+docker logs -f scarydb
 ```
 
 ---
