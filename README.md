@@ -4,7 +4,7 @@ A high-performance, in-memory, actor-based hierarchical database written in Rust
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (5 Minutes)
 
 ### Option 1: Download Pre-built Binary (Recommended)
 
@@ -25,6 +25,9 @@ cd scarydb-*
 Expand-Archive scarydb-*.zip
 cd scarydb-*
 .\scarydb.ps1 standalone
+
+# Windows (Command Prompt)
+scarydb.bat standalone
 ```
 
 ### Option 2: Package Managers
@@ -216,6 +219,98 @@ The following settings are managed in `config.json`:
 
 ---
 
+## 📦 Distribution Packages
+
+| Platform | Archive | Installer | Service Manager |
+|----------|---------|-----------|-----------------|
+| Linux x86_64 | `.tar.gz` | `install_linux.sh` | systemd |
+| Linux ARM64 | `.tar.gz` | `install_linux.sh` | systemd |
+| macOS Intel | `.tar.gz` | `install_macos.sh` | launchd |
+| macOS Apple Silicon | `.tar.gz` | `install_macos.sh` | launchd |
+| Windows (MinGW) | `.zip` | `install_windows.ps1/.bat` | Windows Service |
+| Windows (MSVC) | `.zip` | `install_windows.ps1/.bat` | Windows Service |
+
+---
+
+## 🔧 Installation Scripts
+
+| Platform | Script | Service Manager |
+|----------|--------|-----------------|
+| Linux | `./install_linux.sh` | systemd |
+| macOS | `./install_macos.sh` | launchd |
+| Windows | `.\install_windows.ps1` | Windows Service |
+
+### Linux Service Management
+```bash
+# Start
+sudo systemctl start scarydb
+
+# Stop
+sudo systemctl stop scarydb
+
+# Restart
+sudo systemctl restart scarydb
+
+# Enable auto-start
+sudo systemctl enable scarydb
+
+# Disable auto-start
+sudo systemctl disable scarydb
+
+# Status
+sudo systemctl status scarydb
+
+# Logs
+sudo journalctl -u scarydb -f
+sudo journalctl -u scarydb --since "1 hour ago"
+
+# Reload config after changes
+sudo systemctl reload scarydb
+```
+
+### macOS Service Management
+```bash
+# Start
+sudo launchctl load /Library/LaunchDaemons/com.scarydb.server.plist
+
+# Stop
+sudo launchctl unload /Library/LaunchDaemons/com.scarydb.server.plist
+
+# Status
+launchctl list | grep scarydb
+
+# Logs
+tail -f /opt/scarydb/logs/scarydb.log
+tail -f /opt/scarydb/logs/scarydb.error.log
+```
+
+### Windows Service Management
+```powershell
+# Start
+Start-Service ScaryDB
+net start ScaryDB
+
+# Stop
+Stop-Service ScaryDB
+net stop ScaryDB
+
+# Restart
+Restart-Service ScaryDB
+
+# Status
+Get-Service ScaryDB
+
+# Set startup type
+Set-Service ScaryDB -StartupType Automatic
+Set-Service ScaryDB -StartupType Manual
+Set-Service ScaryDB -StartupType Disabled
+
+# Logs
+Get-WinEvent -LogName Application -ProviderName ScaryDB | Select -First 50
+```
+
+---
+
 ## 📊 Health & Monitoring
 
 ### HTTP Endpoints (when health server enabled)
@@ -223,7 +318,7 @@ The following settings are managed in `config.json`:
 | Endpoint | Description |
 |----------|-------------|
 | `GET /health` | Liveness probe - returns version, uptime, status |
-| `GET /ready` | Readiness probe - checks database/storage accessibility, disk space, memory |
+| `GET /ready` | Readiness probe - checks database/storage accessibility, disk space, memory, network |
 | `GET /metrics` | Prometheus metrics exposition format |
 
 ### Structured Logging
@@ -282,37 +377,6 @@ SHOW RESOURCE USAGE;
 
 -- Show configured limits
 SHOW RESOURCE LIMITS;
-```
-
----
-
-## 🔧 Installation Scripts
-
-| Platform | Script | Service Manager |
-|----------|--------|-----------------|
-| Linux | `./install_linux.sh` | systemd |
-| macOS | `./install_macos.sh` | launchd |
-| Windows | `.\install_windows.ps1` | Windows Service |
-
-### Linux Service Management
-```bash
-sudo systemctl start scarydb
-sudo systemctl status scarydb
-sudo journalctl -u scarydb -f
-```
-
-### macOS Service Management
-```bash
-sudo launchctl load /Library/LaunchDaemons/com.scarydb.server.plist
-launchctl list | grep scarydb
-tail -f /opt/scarydb/logs/scarydb.log
-```
-
-### Windows Service Management
-```powershell
-Start-Service ScaryDB
-Get-Service ScaryDB
-Get-WinEvent -LogName Application -ProviderName ScaryDB
 ```
 
 ---
@@ -519,14 +583,6 @@ chmod +x build-deb.sh
 cd packaging/fedora
 rpmbuild -ba scarydb.spec
 ```
-
----
-
-## 📚 Documentation
-
-- [QUICKSTART.md](QUICKSTART.md) - 5-minute getting started guide
-- [SETUP.md](SETUP.md) - Comprehensive installation guide for all platforms
-- [CHANGELOG.md](CHANGELOG.md) - Version history
 
 ---
 
