@@ -92,7 +92,7 @@ cd ScaryDB
 # Development
 docker-compose up -d
 
-# Production with monitoring stack
+# Production with monitoring
 docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
@@ -123,7 +123,7 @@ docker run -d -p 6379:6379 \
 
 The production compose file includes:
 - **Prometheus** (port 9090) - Metrics collection
-- **Grafana** (port 3000) - Dashboards with pre-built ScaryDB overview
+- **Grafana** (port 3000) - Dashboards with pre-built ScaryDB control panels
 - **Loki** (port 3100) - Log aggregation
 - **Promtail** - Log shipping
 
@@ -133,6 +133,60 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
 # Access Grafana: http://localhost:3000 (admin/changeme)
 # Access Prometheus: http://localhost:9090
+```
+
+### Industry-Grade Grafana Dashboards
+
+Two pre-configured dashboards are provisioned automatically:
+
+1. **ScaryDB Overview** - Core metrics and health
+2. **ScaryDB Industry-Grade Control Panel** - Full observability with manual trigger controls
+
+```bash
+# Access Grafana: http://localhost:3000 (admin/changeme)
+# Dashboards auto-provisioned in "ScaryDB" folder
+```
+
+#### Control Panel Dashboard (Manual Trigger Only)
+
+The **ScaryDB Industry-Grade Control Panel** provides:
+- **Real-time monitoring** of all system metrics
+- **Manual trigger controls** - no auto-actions, all operations require human confirmation
+- **Pressure gauges** (Memory/Disk/Connection) with color-coded thresholds
+- **Request rate & latency** (p50/p95/p99) with 1-minute windows
+- **Resource usage** timeseries (Memory/Disk/Connections)
+- **Circuit breaker state** (CLOSED/HALF_OPEN/OPEN)
+- **Security metrics** (TLS connections, auth success/failure)
+- **WAL & checkpoint queues**
+- **Backup/Restore status** table
+- **Control instructions** panel with available CLI commands
+
+**All control actions require manual trigger** - no automatic scaling, recovery, or failover actions.
+
+Available manual controls via CLI:
+```bash
+# Connect
+scarydb client
+
+# Backup/Restore (manual trigger)
+BACKUP /path/to/backup;
+RESTORE /path/to/backup;
+
+# Circuit breaker (manual trigger)
+CIRCUIT BREAKER STATUS;
+CIRCUIT BREAKER RESET;
+
+# Configuration (persists to config.json)
+SET CONFIG <property> <value>;
+LIST CONFIG;
+
+# Resource limits
+SHOW RESOURCE USAGE;
+SHOW RESOURCE LIMITS;
+
+# Authentication
+AUTH <api_key>;
+AUTH TOKEN <jwt_token>;
 ```
 
 ### Configuration
@@ -218,11 +272,11 @@ Used to monitor and manage resource limits, quotas, and pressure:
 *   `SHOW RESOURCE USAGE;` - Display current resource usage (memory, connections, databases, buckets, keys, disk, pressure levels).
 *   `SHOW RESOURCE LIMITS;` - Display configured resource limits.
 
-### 7. Backup & Recovery Commands
+### 7. Backup & Recovery Commands (Manual Trigger)
 *   `BACKUP <path>;` - Create a full backup (catalog, databases, WAL) to the specified path.
 *   `RESTORE <path>;` - Restore database from a backup directory.
 
-### 8. Circuit Breaker Commands
+### 8. Circuit Breaker Commands (Manual Trigger)
 *   `CIRCUIT BREAKER STATUS;` - Show circuit breaker state.
 *   `CIRCUIT BREAKER RESET;` - Reset circuit breaker to CLOSED state.
 
@@ -408,6 +462,10 @@ Key metrics exposed:
 - `scarydb_uptime_seconds`
 - `scarydb_request_duration_seconds`
 - Resource usage gauges (memory, connections, disk, pressure levels)
+- Circuit breaker state
+- Backup/restore status
+- TLS connections, auth metrics
+- WAL pending writes, checkpoint queue
 
 ### Enhanced Health Checks (`/ready`)
 
