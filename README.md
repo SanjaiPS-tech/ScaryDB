@@ -27,7 +27,28 @@ cd scarydb-*
 .\scarydb.ps1 standalone
 ```
 
-### Option 2: Install as System Service
+### Option 2: Package Managers
+
+```bash
+# Homebrew (macOS/Linux)
+brew tap SanjaiPS-tech/scarydb
+brew install scarydb
+
+# Chocolatey (Windows)
+choco install scarydb
+
+# APT (Debian/Ubuntu)
+curl -fsSL https://apt.scarydb.io/scarydb.gpg | sudo gpg --dearmor -o /usr/share/keyrings/scarydb-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/scarydb-archive-keyring.gpg] https://apt.scarydb.io stable main" | sudo tee /etc/apt/sources.list.d/scarydb.list
+sudo apt update && sudo apt install scarydb
+
+# DNF (Fedora/RHEL)
+sudo rpm --import https://dnf.scarydb.io/scarydb.gpg
+sudo dnf config-manager --add-repo https://dnf.scarydb.io/stable/x86_64/
+sudo dnf install scarydb
+```
+
+### Option 3: Install as System Service
 
 ```bash
 # Linux (systemd)
@@ -45,7 +66,7 @@ Then connect:
 scarydb client
 ```
 
-### Option 3: Build from Source
+### Option 4: Build from Source
 
 Requires Rust 1.70+.
 
@@ -134,6 +155,18 @@ Used to monitor and manage resource limits, quotas, and pressure:
 *   `SHOW RESOURCE USAGE;` - Display current resource usage (memory, connections, databases, buckets, keys, disk, pressure levels).
 *   `SHOW RESOURCE LIMITS;` - Display configured resource limits.
 
+### 7. Backup & Recovery Commands
+*   `BACKUP <path>;` - Create a full backup (catalog, databases, WAL) to the specified path.
+*   `RESTORE <path>;` - Restore database from a backup directory.
+
+### 8. Circuit Breaker Commands
+*   `CIRCUIT BREAKER STATUS;` - Show circuit breaker state.
+*   `CIRCUIT BREAKER RESET;` - Reset circuit breaker to CLOSED state.
+
+### 9. Authentication Commands
+*   `AUTH <api_key>;` - Authenticate with API key.
+*   `AUTH TOKEN <jwt_token>;` - Authenticate with JWT token.
+
 ---
 
 ## ⚙️ Configuration Properties (`config.json`)
@@ -148,6 +181,23 @@ The following settings are managed in `config.json`:
 | `memory.max_memory_kb` | Memory limit (0 = unlimited) | `0` |
 | `network.host` | Bind address | `127.0.0.1` |
 | `network.port` | TCP port | `6379` |
+
+### TLS Configuration
+| Property | Description | Default |
+|----------|-------------|---------|
+| `tls.enabled` | Enable TLS | `false` |
+| `tls.cert_file` | Certificate file path | `""` |
+| `tls.key_file` | Private key file path | `""` |
+| `tls.ca_file` | CA certificate file (for mTLS) | `""` |
+| `tls.require_client_cert` | Require client certificate | `false` |
+
+### Authentication Configuration
+| Property | Description | Default |
+|----------|-------------|---------|
+| `auth.enabled` | Enable authentication | `false` |
+| `auth.jwt_secret` | JWT signing secret | (required if enabled) |
+| `auth.token_expiry_hours` | JWT token expiry | `24` |
+| `auth.api_keys` | List of valid API keys | `[]` |
 
 ### Runtime Resource Limits (via Resource Manager)
 
@@ -173,7 +223,7 @@ The following settings are managed in `config.json`:
 | Endpoint | Description |
 |----------|-------------|
 | `GET /health` | Liveness probe - returns version, uptime, status |
-| `GET /ready` | Readiness probe - checks database/storage accessibility |
+| `GET /ready` | Readiness probe - checks database/storage accessibility, disk space, memory |
 | `GET /metrics` | Prometheus metrics exposition format |
 
 ### Structured Logging
@@ -203,6 +253,14 @@ Key metrics exposed:
 - `scarydb_uptime_seconds`
 - `scarydb_request_duration_seconds`
 - Resource usage gauges (memory, connections, disk, pressure levels)
+
+### Enhanced Health Checks (`/ready`)
+
+The readiness endpoint performs dependency checks:
+- **Disk Space**: Verifies sufficient disk space for WAL and checkpoints
+- **Memory**: Checks memory pressure threshold
+- **Network**: Validates TCP listener is accepting connections
+- **Storage**: Confirms database files are readable/writable
 
 ---
 
@@ -338,6 +396,8 @@ cargo run --release --bin benchmark
 │  WAL Writer ←→  Persistence Manager (JSON + WAL)   │
 │         ↓                    ↓                      │
 │  Resource Manager ←→  Health/Metrics Server (Axum) │
+│         ↓                    ↓                      │
+│  TLS/Auth Layer ←→  Circuit Breaker                │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -347,6 +407,9 @@ cargo run --release --bin benchmark
 - **Storage**: `dashmap` (concurrent HashMap), `memmap2` (mmap), `serde_json`
 - **Observability**: `tracing` (structured logging), `metrics` + `metrics-exporter-prometheus`
 - **Health**: `axum` + `tower-http` (HTTP endpoints)
+- **TLS**: `rustls` + `tokio-rustls`
+- **Auth**: `jsonwebtoken` (JWT), API keys
+- **Reliability**: Circuit breaker pattern, PITR from WAL
 
 ---
 
@@ -402,14 +465,60 @@ netstat -tlnp | grep 6379
 ss -tlnp | grep 6379
 ```
 
+### TLS Certificate Issues
+```bash
+# Verify certificate
+openssl x509 -in cert.pem -text -noout
+
+# Check key matches cert
+openssl rsa -in key.pem -pubout | openssl sha256
+openssl x509 -in cert.pem -pubkey -noout | openssl sha256
+```
+
 ---
 
 ## 🔒 Security Considerations
 
 1. **Network Binding**: Default binds to `127.0.0.1` only. Use `0.0.0.0` with firewall rules for external access.
-2. **Authentication**: Not yet implemented (planned). Use network isolation (VPN, firewall).
+2. **Authentication**: Enable API key or JWT authentication for production. Use TLS for transport encryption.
 3. **File Permissions**: Data directory should be owned by service user only.
 4. **Updates**: Regularly update from GitHub releases for security patches.
+5. **Secrets**: Store JWT secret and TLS keys securely, not in version control.
+
+---
+
+## 📦 Distribution Packaging
+
+ScaryDB provides packaging for major package managers:
+
+| Format | Location | Status |
+|--------|----------|--------|
+| **Homebrew** | `packaging/homebrew/scarydb.rb` | ✅ Ready |
+| **Chocolatey** | `packaging/chocolatey/` | ✅ Ready |
+| **Debian/APT** | `packaging/debian/` | ✅ Ready |
+| **RPM/DNF** | `packaging/fedora/` | ✅ Ready |
+
+### Building Packages
+
+```bash
+# Homebrew
+brew tap-new SanjaiPS-tech/scarydb
+cp packaging/homebrew/scarydb.rb $(brew --repository SanjaiPS-tech/scarydb)/Formula/
+
+# Chocolatey
+cd packaging/chocolatey
+# Edit .nuspec with actual version/checksums
+choco pack
+
+# Debian
+cd packaging/debian
+chmod +x build-deb.sh
+./build-deb.sh
+
+# RPM
+cd packaging/fedora
+rpmbuild -ba scarydb.spec
+```
 
 ---
 

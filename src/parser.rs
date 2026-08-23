@@ -131,6 +131,14 @@ pub enum Command {
     // Auth
     Auth { api_key: String },
     AuthToken { token: String },
+
+    // Backup/Restore
+    Backup { path: String },
+    Restore { path: String },
+    
+    // Circuit breaker
+    CircuitBreakerStatus,
+    CircuitBreakerReset,
 }
 
 pub fn parse_command(input: &str) -> Result<Command, String> {
@@ -378,6 +386,43 @@ pub fn parse_command(input: &str) -> Result<Command, String> {
                     consume_optional_semicolon(&tokens, &mut cursor);
                     Ok(Command::Auth { api_key: sub })
                 }
+            }
+        }
+        "BACKUP" => {
+            if cursor >= tokens.len() {
+                return Err("Expected path after BACKUP".to_string());
+            }
+            let path = expect_word(get_token(&tokens, &mut cursor)?)?;
+            consume_optional_semicolon(&tokens, &mut cursor);
+            Ok(Command::Backup { path })
+        }
+        "RESTORE" => {
+            if cursor >= tokens.len() {
+                return Err("Expected path after RESTORE".to_string());
+            }
+            let path = expect_word(get_token(&tokens, &mut cursor)?)?;
+            consume_optional_semicolon(&tokens, &mut cursor);
+            Ok(Command::Restore { path })
+        }
+        "CIRCUIT" => {
+            if cursor >= tokens.len() {
+                return Err("Expected BREAKER after CIRCUIT".to_string());
+            }
+            let sub_verb = expect_word(get_token(&tokens, &mut cursor)?)?.to_uppercase();
+            match sub_verb.as_str() {
+                "BREAKER" => {
+                    if cursor >= tokens.len() {
+                        return Err("Expected STATUS or RESET after CIRCUIT BREAKER".to_string());
+                    }
+                    let action = expect_word(get_token(&tokens, &mut cursor)?)?.to_uppercase();
+                    consume_optional_semicolon(&tokens, &mut cursor);
+                    match action.as_str() {
+                        "STATUS" => Ok(Command::CircuitBreakerStatus),
+                        "RESET" => Ok(Command::CircuitBreakerReset),
+                        _ => Err(format!("Expected STATUS or RESET, found '{}'", action)),
+                    }
+                }
+                _ => Err(format!("Expected BREAKER after CIRCUIT, found '{}'", sub_verb)),
             }
         }
         other => Err(format!("Unknown command verb: '{}'", other)),

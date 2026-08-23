@@ -1,7 +1,7 @@
 // TLS and Authentication module
 
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-use rustls::{ServerConfig};
+use rustls::ServerConfig;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use std::fs::File;
 use std::io::BufReader;
@@ -25,7 +25,10 @@ impl TlsConfig {
     /// Create TLS config from settings
     pub fn from_settings(settings: &crate::config::TlsSettings) -> Result<Self, String> {
         if !settings.enabled {
-            return Ok(Self { acceptor: None, enabled: false });
+            return Ok(Self {
+                acceptor: None,
+                enabled: false,
+            });
         }
 
         // Load certificate chain
@@ -56,17 +59,8 @@ impl TlsConfig {
         // Store the raw key bytes for cloning
         let key_bytes = keys[0].clone();
 
-        // Build server config
-        let config = ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(
-                cert_chain.clone(),
-                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_bytes.clone()))
-            )
-            .map_err(|e| format!("Failed to build TLS config: {}", e))?;
-
         // If client cert required, configure client auth
-        if let Some(ca_file) = &settings.ca_file {
+        let acceptor = if let Some(ca_file) = &settings.ca_file {
             if settings.require_client_cert {
                 let ca_file = File::open(ca_file)
                     .map_err(|e| format!("Failed to open CA file {}: {}", ca_file, e))?;
@@ -79,7 +73,9 @@ impl TlsConfig {
 
                 let mut root_store = rustls::RootCertStore::empty();
                 for cert in ca_certs {
-                    root_store.add(cert).map_err(|e| format!("Failed to add CA cert: {}", e))?;
+                    root_store
+                        .add(cert)
+                        .map_err(|e| format!("Failed to add CA cert: {}", e))?;
                 }
 
                 // Use WebPkiClientVerifier builder for client cert verification
@@ -87,16 +83,41 @@ impl TlsConfig {
                     .build()
                     .map_err(|e| format!("Failed to build client cert verifier: {}", e))?;
 
-                // verifier is already Arc<dyn ClientCertVerifier> from build()
-                let config = ServerConfig::builder()
+                // Build server config with client auth
+                let server_config = ServerConfig::builder()
                     .with_client_cert_verifier(verifier)
-                    .with_single_cert(cert_chain, PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_bytes.clone())))
+                    .with_single_cert(
+                        cert_chain,
+                        PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_bytes.clone())),
+                    )
                     .map_err(|e| format!("Failed to build TLS config with client auth: {}", e))?;
-            }
-        }
 
-        let acceptor = TlsAcceptor::from(Arc::new(config));
-        
+                TlsAcceptor::from(Arc::new(server_config))
+            } else {
+                // No client cert required
+                let server_config = ServerConfig::builder()
+                    .with_no_client_auth()
+                    .with_single_cert(
+                        cert_chain,
+                        PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_bytes.clone())),
+                    )
+                    .map_err(|e| format!("Failed to build TLS config: {}", e))?;
+
+                TlsAcceptor::from(Arc::new(server_config))
+            }
+        } else {
+            // No CA file, no client auth
+            let server_config = ServerConfig::builder()
+                .with_no_client_auth()
+                .with_single_cert(
+                    cert_chain,
+                    PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_bytes.clone())),
+                )
+                .map_err(|e| format!("Failed to build TLS config: {}", e))?;
+
+            TlsAcceptor::from(Arc::new(server_config))
+        };
+
         Ok(Self {
             acceptor: Some(acceptor),
             enabled: true,
@@ -127,7 +148,7 @@ impl AuthManager {
         for key in &settings.api_keys {
             keys.insert(key.clone());
         }
-        
+
         Self {
             jwt_secret: settings.jwt_secret.clone(),
             token_expiry_hours: settings.token_expiry_hours,

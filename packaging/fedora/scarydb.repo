@@ -1,0 +1,15 @@
+[scarydb]
+name=ScaryDB Repository
+baseurl=https://dnf.scarydb.io/stable/$basearch/
+enabled=1
+gpgcheck=1
+gpgkey=https://dnf.scarydb.io/scarydb.gpg
+repo_gpgcheck=1
+metadata_expire=1h
+
+[scarydb-source]
+name=ScaryDB Repository - Source
+baseurl=https://dnf.scarydb.io/stable/SRPMS/
+enabled=0
+gpgcheck=1
+gpgkey=https://dnf.scarydb.io/scarydb.gpg

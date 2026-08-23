@@ -77,6 +77,12 @@ impl DatabaseSystem {
             Command::SetConfig { property, value } => self.execute_set_config(property, value),
             // Auth commands handled at connection level - should not reach here
             Command::Auth { .. } | Command::AuthToken { .. } => Err("Auth commands handled at connection level".to_string()),
+            // Backup/Restore
+            Command::Backup { path } => self.execute_backup(path),
+            Command::Restore { path } => self.execute_restore(path),
+            // Circuit breaker
+            Command::CircuitBreakerStatus => self.execute_circuit_breaker_status(),
+            Command::CircuitBreakerReset => self.execute_circuit_breaker_reset(),
         };
 
         Response {
@@ -280,37 +286,7 @@ impl DatabaseSystem {
     }
 
     fn execute_help(&self) -> String {
-        "ScaryDB Command Syntax:
-DDC (Database Definition Commands)
-  CREATE DB <db_name>;
-  DROP DB <db_name>;
-  USE <db_name>;
-  CREATE BUCKET <bucket_name>;
-  DROP BUCKET <bucket_name>;
-  LIST DBS; (or Databases)
-  LIST BUCKETS; (or Buck)
-
-DMC (Data Manipulation Commands)
-  SET <bucket> <key> [TYPE] <value> / <key> <value> ...;
-  DEL <bucket> <key> / <key> ...;
-
-DRC (Data Retrieval Commands)
-  GET <bucket> <key> / <key> ...;
-  EXISTS <bucket> <key> / <key> ...;
-  LIST <bucket>;
-  COUNT <bucket>;
-
-SCC (System Control Commands)
-  BOINK / PING
-  INFO
-  STATS
-  VERSION
-  HELP / MAN
-
-CCC (Configuration Control Commands)
-  LIST CONFIG;
-  GET CONFIG <property>;
-  SET CONFIG <property> <value>;".to_string()
+        "ScaryDB Command Syntax:\nDDC (Database Definition Commands)\n  CREATE DB <db_name>;\n  DROP DB <db_name>;\n  USE <db_name>;\n  CREATE BUCKET <bucket_name>;\n  DROP BUCKET <bucket_name>;\n  LIST DBS; (or Databases)\n  LIST BUCKETS; (or Buck)\n\nDMC (Data Manipulation Commands)\n  SET <bucket> <key> [TYPE] <value> / <key> <value> ...;\n  DEL <bucket> <key> / <key> ...;\n\nDRC (Data Retrieval Commands)\n  GET <bucket> <key> / <key> ...;\n  EXISTS <bucket> <key> / <key> ...;\n  LIST <bucket>;\n  COUNT <bucket>;\n\nSCC (System Control Commands)\n  BOINK / PING\n  INFO\n  STATS\n  VERSION\n  HELP / MAN\n\nCCC (Configuration Control Commands)\n  LIST CONFIG;\n  GET CONFIG <property>;\n  SET CONFIG <property> <value>;\n\nBackup/Restore\n  BACKUP <path>;\n  RESTORE <path>;\n\nCircuit Breaker\n  CIRCUIT BREAKER STATUS;\n  CIRCUIT BREAKER RESET;".to_string()
     }
 
     fn execute_list_config(&self) -> String {
@@ -333,6 +309,94 @@ CCC (Configuration Control Commands)
         self.config.set_property(&property, &value)?;
         self.config.save(&self.config_path)?;
         Ok(format!("Configuration property '{}' updated to '{}' and saved.", property, value))
+    }
+
+    // Backup/Restore
+    fn execute_backup(&mut self, path: String) -> Result<String, String> {
+        // Create backup by checkpointing and copying data files
+        self.persistence.checkpoint(&self.engine)?;
+        
+        let backup_path = std::path::Path::new(&path);
+        std::fs::create_dir_all(backup_path)
+            .map_err(|e| format!("Failed to create backup directory: {}", e))?;
+        
+        // Copy catalog
+        std::fs::copy(
+            &self.persistence.catalog_path,
+            backup_path.join("catalog.db")
+        ).map_err(|e| format!("Failed to copy catalog: {}", e))?;
+        
+        // Copy database files
+        for (db_id, db_name) in &self.engine.global_catalog.db_id_to_name {
+            let src = self.persistence.data_dir.join(format!("{}.db", db_name));
+            if src.exists() {
+                std::fs::copy(&src, backup_path.join(format!("{}.db", db_name)))
+                    .map_err(|e| format!("Failed to copy database {}: {}", db_name, e))?;
+            }
+        }
+        
+        // Copy WAL
+        if self.persistence.log_file_path.exists() {
+            std::fs::copy(
+                &self.persistence.log_file_path,
+                backup_path.join("operations.log")
+            ).map_err(|e| format!("Failed to copy WAL: {}", e))?;
+        }
+        
+        Ok(format!("Backup created at '{}'", path))
+    }
+
+    fn execute_restore(&mut self, path: String) -> Result<String, String> {
+        let backup_path = std::path::Path::new(&path);
+        
+        if !backup_path.exists() {
+            return Err(format!("Backup path '{}' does not exist", path));
+        }
+        
+        // Restore catalog
+        let catalog_src = backup_path.join("catalog.db");
+        if catalog_src.exists() {
+            std::fs::copy(&catalog_src, &self.persistence.catalog_path)
+                .map_err(|e| format!("Failed to restore catalog: {}", e))?;
+        }
+        
+        // Restore database files
+        let entries = std::fs::read_dir(backup_path)
+            .map_err(|e| format!("Failed to read backup directory: {}", e))?;
+        
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_string_lossy();
+            
+            if file_name_str.ends_with(".db") && file_name_str != "catalog.db" {
+                let dest = self.persistence.data_dir.join(file_name_str.as_ref());
+                std::fs::copy(entry.path(), &dest)
+                    .map_err(|e| format!("Failed to restore database {}: {}", file_name_str, e))?;
+            }
+        }
+        
+        // Restore WAL
+        let wal_src = backup_path.join("operations.log");
+        if wal_src.exists() {
+            std::fs::copy(&wal_src, &self.persistence.log_file_path)
+                .map_err(|e| format!("Failed to restore WAL: {}", e))?;
+        }
+        
+        // Reinitialize engine from restored state
+        self.engine = crate::engine::StorageEngine::new();
+        self.persistence.restore(&mut self.engine)?;
+        
+        Ok(format!("Restored from backup '{}'", path))
+    }
+
+    // Circuit Breaker
+    fn execute_circuit_breaker_status(&self) -> Result<String, String> {
+        Ok("Circuit breaker status: CLOSED (not implemented yet)".to_string())
+    }
+
+    fn execute_circuit_breaker_reset(&mut self) -> Result<String, String> {
+        Ok("Circuit breaker reset (not implemented yet)".to_string())
     }
 }
 
@@ -366,20 +430,20 @@ impl WorkerPool {
                             break;
                         }
                     };
-
+                    
                     // Execute command
                     let response = {
                         let mut sys_lock = sys.write();
                         sys_lock.execute_command(request.command, request.db_context)
                     };
-
+                    
                     // Send response back
                     let _ = request.response_tx.send(response);
                 }
             });
             workers.push(handle);
         }
-
+        
         WorkerPool { _workers: workers }
     }
 

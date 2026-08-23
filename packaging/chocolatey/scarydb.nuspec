@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>scarydb</id>
+    <version>0.1.0</version>
+    <title>ScaryDB</title>
+    <authors>SanjaiPS-tech</authors>
+    <owners>SanjaiPS-tech</owners>
+    <summary>High-performance, in-memory, actor-based hierarchical database</summary>
+    <description>
+      ScaryDB is a high-performance, in-memory, actor-based hierarchical database written in Rust.
+      It utilizes a nested key-value store structured as Database → Bucket → Key → Value with 
+      automatic/explicit value types, an internal ID catalog mapping, a TCP server-client architecture 
+      with a thread pool/request queue concurrency model, and dual-path binary logging/JSON checkpoints persistence.
+    </description>
+    <projectUrl>https://github.com/SanjaiPS-tech/ScaryDB</projectUrl>
+    <iconUrl>https://raw.githubusercontent.com/SanjaiPS-tech/ScaryDB/main/assets/icon.png</iconUrl>
+    <licenseUrl>https://github.com/SanjaiPS-tech/ScaryDB/blob/main/LICENSE</licenseUrl>
+    <copyright>Copyright 2026 SanjaiPS-tech</copyright>
+    <tags>database key-value in-memory hierarchical rust</tags>
+    <releaseNotes>
+      Initial release of ScaryDB v0.1.0
+      - Database → Bucket → Key → Value hierarchy
+      - TCP server with RESP-compatible protocol
+      - Structured logging with Prometheus metrics
+      - Resource management with limits and quotas
+      - Cross-platform support (Windows, Linux, macOS)
+    </releaseNotes>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+    <file src="bin\**" target="bin" />
+    <file src="config.json" target="config" />
+  </files>
+</package>

@@ -1,0 +1,13 @@
+# APT Repository Configuration for ScaryDB
+# Add to /etc/apt/sources.list.d/scarydb.list
+
+# Stable releases
+deb [arch=amd64 signed-by=/usr/share/keyrings/scarydb-archive-keyring.gpg] https://apt.scarydb.io stable main
+deb [arch=arm64 signed-by=/usr/share/keyrings/scarydb-archive-keyring.gpg] https://apt.scarydb.io stable main
+
+# Development releases (optional)
+# deb [arch=amd64 signed-by=/usr/share/keyrings/scarydb-archive-keyring.gpg] https://apt.scarydb.io unstable main
+# deb [arch=arm64 signed-by=/usr/share/keyrings/scarydb-archive-keyring.gpg] https://apt.scarydb.io unstable main
+
+# Source packages (optional)
+# deb-src [signed-by=/usr/share/keyrings/scarydb-archive-keyring.gpg] https://apt.scarydb.io stable main
