@@ -1,8 +1,8 @@
-use crate::config::Config;
+use crate::core::config::Config;
 use crate::engine::StorageEngine;
-use crate::parser::Command;
-use crate::persistence::{LogOp, PersistenceManager};
-use crate::value::Value;
+use crate::query::parser::Command;
+use crate::storage::persistence::{LogOp, PersistenceManager};
+use crate::core::value::Value;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -167,7 +167,7 @@ impl DatabaseSystem {
         }
     }
 
-    fn execute_set(&mut self, bucket: String, ops: Vec<crate::parser::SetOp>, current_db: Option<u32>) -> Result<String, String> {
+    fn execute_set(&mut self, bucket: String, ops: Vec<crate::query::parser::SetOp>, current_db: Option<u32>) -> Result<String, String> {
         let db_id = current_db.ok_or_else(|| "No database selected. Run 'USE <db_name>;' first.".to_string())?;
         let db_name = self.engine.global_catalog.db_id_to_name.get(&db_id)
             .cloned()
@@ -271,38 +271,37 @@ impl DatabaseSystem {
     }
 
     fn execute_help(&self) -> String {
-        "ScaryDB Command Syntax:
-DDC (Database Definition Commands)
-  CREATE DB <db_name>;
-  DROP DB <db_name>;
-  USE <db_name>;
-  CREATE BUCKET <bucket_name>;
-  DROP BUCKET <bucket_name>;
-  LIST DBS; (or Databases)
-  LIST BUCKETS; (or Buck)
-
-DMC (Data Manipulation Commands)
-  SET <bucket> <key> [TYPE] <value> / <key> <value> ...;
-  DEL <bucket> <key> / <key> ...;
-
-DRC (Data Retrieval Commands)
-  GET <bucket> <key> / <key> ...;
-  EXISTS <bucket> <key> / <key> ...;
-  LIST <bucket>;
-  COUNT <bucket>;
-
-SCC (System Control Commands)
-  BOINK / PING
-  INFO
-  STATS
-  VERSION
-  HELP / MAN
-
-CCC (Configuration Control Commands)
-  LIST CONFIG;
-  GET CONFIG <property>;
-  SET CONFIG <property> <value>;"
-            .to_string()
+        "ScaryDB Command Syntax:\n\
+        DDC (Database Definition Commands)\n\
+          CREATE DB <db_name>;\n\
+          DROP DB <db_name>;\n\
+          USE <db_name>;\n\
+          CREATE BUCKET <bucket_name>;\n\
+          DROP BUCKET <bucket_name>;\n\
+          LIST DBS; (or Databases)\n\
+          LIST BUCKETS; (or Buck)\n\
+\n\
+        DMC (Data Manipulation Commands)\n\
+          SET <bucket> <key> [TYPE] <value> / <key> <value> ...;\n\
+          DEL <bucket> <key> / <key> ...;\n\
+\n\
+        DRC (Data Retrieval Commands)\n\
+          GET <bucket> <key> / <key> ...;\n\
+          EXISTS <bucket> <key> / <key> ...;\n\
+          LIST <bucket>;\n\
+          COUNT <bucket>;\n\
+\n\
+        SCC (System Control Commands)\n\
+          BOINK / PING\n\
+          INFO\n\
+          STATS\n\
+          VERSION\n\
+          HELP / MAN\n\
+\n\
+        CCC (Configuration Control Commands)\n\
+          LIST CONFIG;\n\
+          GET CONFIG <property>;\n\
+          SET CONFIG <property> <value>;".to_string()
     }
 
     fn execute_list_config(&self) -> String {
@@ -342,7 +341,7 @@ impl WorkerPool {
         for id in 0..num_workers {
             let rx = Arc::clone(&request_rx);
             let sys = Arc::clone(&system);
-            
+
             let handle = thread::spawn(move || {
                 if !crate::QUIET.load(std::sync::atomic::Ordering::Relaxed) {
                     println!("Worker thread {} started and waiting for requests...", id);
