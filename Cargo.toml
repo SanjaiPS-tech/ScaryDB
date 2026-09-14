@@ -17,7 +17,7 @@ serde_yaml = "0.9"
 base64 = "0.21"
 csv = "1.1"
 quick-xml = "0.30"
-yaml_rust2 = "0.9"
+yaml-rust2 = "0.9"
 tantivy = "0.14"
 uuid = { version = "1.4", features = ["v4"] }
 bcrypt = "0.13"
